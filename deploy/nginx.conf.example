@@ -1,0 +1,75 @@
+# nginx server block for Резак (Carver).
+# Install as /etc/nginx/sites-available/rezak, then:
+#   ln -s /etc/nginx/sites-available/rezak /etc/nginx/sites-enabled/
+#   nginx -t && systemctl reload nginx
+# TLS: certbot --nginx -d <DOMAIN>   (it rewrites this file to listen 443)
+#
+# The app is a static SPA: nginx only serves files from dist/. There is no backend.
+# base is './' in vite.config.ts, so this also works under a subpath if you move `root`.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name <DOMAIN>;
+
+    root /srv/rezak/current/dist;
+    index index.html;
+
+    # --- MIME types -------------------------------------------------------------------
+    # The ONNX runtime ships a .wasm file; some nginx defaults omit it.
+    types {
+        application/wasm wasm;
+    }
+
+    # --- caching ----------------------------------------------------------------------
+    # The app shell and the service worker must always be revalidated, otherwise a new
+    # deploy can be masked by a stale cached shell (sw.js serves as offline fallback).
+    location = /index.html {
+        add_header Cache-Control "no-cache" always;
+    }
+    location = /sw.js {
+        add_header Cache-Control "no-cache" always;
+    }
+    # Hashed filenames -> safe to cache forever.
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    # --- local model mirror (Hugging Face fallback) ------------------------------------
+    # The app tries huggingface.co first and only falls back to these files when HF is
+    # unreachable. Populate with `node deploy/sync-models.mjs` locally, then sync the folder
+    # to /srv/rezak/current/models (it is gitignored because it is ~5 GB).
+    location /models/ {
+        alias /srv/rezak/current/models/;
+        types {
+            application/wasm wasm;
+            application/octet-stream onnx;
+            application/json json;
+            text/plain txt;
+        }
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header X-Content-Type-Options nosniff always;
+    }
+
+    # --- static SPA -------------------------------------------------------------------
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # --- IMPORTANT: do NOT add COOP/COEP ----------------------------------------------
+    # Cross-Origin-Opener-Policy / Cross-Origin-Embedder-Policy BLOCK model downloads
+    # from Hugging Face and are not needed: the app does not use SharedArrayBuffer.
+    # Do not add them here or in any global nginx config.
+
+    add_header X-Content-Type-Options nosniff always;
+
+    # Optional: compress text assets (the 26 MB wasm is already compressed by the browser
+    # on first fetch; gzip on wasm rarely helps and costs CPU — leave wasm out).
+    gzip on;
+    # /api/* is proxied to the workspace service; without this nginx never compresses it
+    # (a full workspace response is megabytes, a manifest poll is a kilobyte).
+    gzip_proxied any;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
+}

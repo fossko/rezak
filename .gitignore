@@ -1,0 +1,34 @@
+# dependencies (installed with `npm ci`)
+node_modules/
+
+# build output (produced by `npm run build`)
+dist/
+
+# local Hugging Face fallback mirror (~5 GB, populated by `node deploy/sync-models.mjs`;
+# synced to the server separately, never committed)
+models/
+
+# TypeScript incremental build info
+tsconfig.tsbuildinfo
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# local environment / secrets (never commit keys, tokens or hosts)
+.env
+.env.*
+*.local
+
+# optional workspace service data (project JSON + sessions)
+.workspaces/
+
+# local tooling, recordings and the source archive (never committed)
+.tools/
+*.zip
+*.mp4
+
+# local artifacts
+shots/

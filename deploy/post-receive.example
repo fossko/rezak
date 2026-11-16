@@ -1,0 +1,43 @@
+#!/bin/sh
+# post-receive hook for /srv/git/rezak.git
+# Checks out the pushed `main` branch into /srv/rezak/current and builds dist/.
+# nginx serves /srv/rezak/current/dist (see deploy/nginx.conf.example).
+#
+# Install:
+#   cp deploy/post-receive.example /srv/git/rezak.git/hooks/post-receive
+#   chmod +x /srv/git/rezak.git/hooks/post-receive
+# Run it as the user that owns the repo and /srv/rezak (root or a dedicated user).
+set -eu
+
+export PATH="/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+
+GIT_DIR="/srv/git/rezak.git"
+WORK="/srv/rezak/current"
+BRANCH="main"
+
+while read -r oldrev newrev refname; do
+    case "$refname" in
+        "refs/heads/$BRANCH") ;;
+        *)
+            echo "post-receive: ignoring $refname (only refs/heads/$BRANCH deploys)"
+            continue
+            ;;
+    esac
+
+    export GIT_DIR GIT_WORK_TREE="$WORK"
+    mkdir -p "$WORK"
+    git checkout -f "$BRANCH"
+
+    cd "$WORK"
+
+    # npm ci only when dependencies changed (or on the very first deploy).
+    if [ ! -d node_modules ] || ! git diff --quiet "$oldrev" "$newrev" -- package-lock.json 2>/dev/null; then
+        echo "post-receive: installing dependencies"
+        npm ci --no-audit --no-fund
+    fi
+
+    echo "post-receive: building"
+    npm run build
+
+    echo "post-receive: deployed $(git rev-parse --short HEAD) at $(date -Is)"
+done
