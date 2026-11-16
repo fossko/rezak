@@ -1,5 +1,10 @@
 # Carver — history of requests, decisions and measurements
 
+> This public release starts from a single initial commit. Commit hashes and release paths
+> mentioned below belong to the pre-public development history: they are kept for the engineering
+> record but are not reachable in this repository. Hosts, credentials, workspace links and private
+> paths were removed before publication.
+
 Chronological record of what the user asked for, what was built, and what was measured, so later
 agents understand *why* the code is the way it is. Dates are 2026-10-22/23 (Europe/Moscow).
 

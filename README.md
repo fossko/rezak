@@ -196,3 +196,10 @@ English, typecheck, run the relevant tests, build the app, and never commit secr
 No open-source license has been declared for this repository yet. Until one is added, copyright
 remains with the authors and reuse requires permission. If you intend to reuse the code, open an
 issue to discuss licensing.
+
+## Repository history
+
+This public repository starts from a single initial commit. The pre-public development history is
+not included; deployment-specific hosts, credentials, workspace links and private paths were
+removed before publication. The engineering decisions and measurements worth keeping are in
+[docs/HISTORY.md](docs/HISTORY.md).
