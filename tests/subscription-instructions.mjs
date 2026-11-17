@@ -55,26 +55,22 @@ try {
     await page.goto(origin);
     await page.getByRole('button', { name: 'Настройки', exact: true }).click();
     await page.getByRole('button', { name: 'ИИ (LLM)', exact: true }).click();
-    const button = page.getByRole('button', { name: 'Подключить подписку', exact: true });
-    const codex = page.getByRole('heading', { name: 'Codex (ChatGPT)', exact: true });
-    const claude = page.getByRole('heading', { name: 'Claude Code', exact: true });
+    const button = page.getByRole('button', { name: /^(Подключить подписку|Подписка ChatGPT · используется)$/ });
+    const api = page.getByRole('button', { name: /^Подключение по API/ });
+    const apiAddress = page.getByRole('textbox', { name: 'Адрес API', exact: true });
     assert.equal(await button.getAttribute('aria-expanded'), 'false');
-    assert.equal(await codex.isVisible(), false);
+    assert.equal(await api.getAttribute('aria-expanded'), 'true');
+    assert.ok(await apiAddress.isVisible());
 
     await button.press('Enter');
     assert.equal(await button.getAttribute('aria-expanded'), 'true');
-    assert.ok(await codex.isVisible());
-    assert.equal(await claude.count(), 0);
-    assert.ok(await page.getByText('codex login --device-auth', { exact: true }).isVisible());
-    assert.equal(await page.getByRole('link', { name: 'auth.openai.com/codex/device', exact: true }).getAttribute('href'),
-      'https://auth.openai.com/codex/device');
-    assert.equal(await page.getByRole('link', { name: 'Справка по входу в Codex' }).getAttribute('href'),
-      'https://learn.chatgpt.com/docs/auth#login-on-headless-devices');
+    assert.equal(await apiAddress.isVisible(), false);
+    assert.ok(await page.getByRole('heading', { name: 'ChatGPT в Rezak' }).isVisible());
+    assert.equal(await page.getByText('codex login --device-auth', { exact: true }).count(), 0);
+    assert.equal(await page.getByRole('link', { name: 'auth.openai.com/codex/device', exact: true }).count(), 0);
 
     await button.click();
     assert.equal(await button.getAttribute('aria-expanded'), 'false');
-    assert.equal(await codex.isVisible(), false);
-    assert.equal(await claude.isVisible(), false);
     assert.ok(await page.getByRole('button', { name: 'Проверить подключение', exact: true }).isVisible());
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('carver:llm')));
     assert.deepEqual(saved, apiSettings);
@@ -86,6 +82,8 @@ try {
     planState = 'connected';
     const models = page.getByLabel('Модель подписки ChatGPT');
     await models.selectOption('plan-model');
+    assert.equal(await button.innerText(), 'Подписка ChatGPT · используется');
+    assert.equal(await api.getAttribute('aria-expanded'), 'false');
     await page.getByRole('button', { name: 'Проверить подключение', exact: true }).click();
     await page.getByText(/Подключение работает: ответ «готово»/).waitFor();
     assert.equal(planRequest.model, 'plan-model');
@@ -132,11 +130,19 @@ try {
 
     await page.getByRole('button', { name: 'Настройки', exact: true }).click();
     await page.getByRole('button', { name: 'ИИ (LLM)', exact: true }).click();
+    assert.equal(await button.getAttribute('aria-expanded'), 'true');
+    assert.equal(await api.getAttribute('aria-expanded'), 'false');
+    await api.click();
+    assert.ok(await apiAddress.isVisible());
+    assert.equal(await button.innerText(), 'Подписка ChatGPT · используется');
     await button.click();
     await page.getByRole('button', { name: 'Проверить подключение', exact: true }).click();
     await page.getByText(/Подключение работает: ответ «готово»/).waitFor();
     assert.equal(planRequest.model, 'second-plan-model');
     await page.getByRole('button', { name: 'Использовать настройки API' }).click();
+    assert.equal(await button.getAttribute('aria-expanded'), 'false');
+    assert.equal(await api.getAttribute('aria-expanded'), 'true');
+    assert.ok(await apiAddress.isVisible());
     const after = await page.evaluate(() => JSON.parse(localStorage.getItem('carver:llm')));
     assert.equal(after.chatGptPlan, false);
     assert.equal(after.key, apiSettings.key);
