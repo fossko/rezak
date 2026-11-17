@@ -133,15 +133,18 @@ export function createChatGptPlan({ request = fetch } = {}) {
         if (!/^urn:uuid:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(body?.hostId ?? '')) {
           return result(res, 400, { error: 'HOST_INVALID' });
         }
-        if (session?.state === 'connected') return result(res, 409, { error: 'ALREADY_CONNECTED' });
+        if (session?.state === 'connected' || session?.state === 'exchanging') {
+          return result(res, 409, { error: 'SIGN_IN_ACTIVE' });
+        }
         for (const [key, value] of sessions) {
           if (value.state !== 'connected' && value.deadline < Date.now()) sessions.delete(key);
         }
         if (sessions.size >= 16 && !sessions.has(id)) return result(res, 429, { error: 'TOO_MANY_SESSIONS' });
         const sessionId = id && sessions.has(id) ? id : random();
+        for (const request of session?.requests ?? []) request.abort();
         session = { clientId: session?.hostId === body.hostId ? session.clientId : undefined,
           subject: session?.hostId === body.hostId ? session.subject : undefined, hostId: body.hostId, state: 'pending',
-          attempt: random(), nonce: random(), verifier: random(), deadline: Date.now() + 10 * 60_000 };
+          attempt: random(), nonce: random(), verifier: random(), deadline: Date.now() + 10 * 60_000, requests: new Set() };
         sessions.set(sessionId, session);
         const url = new URL(auth + '/api/accounts/authorize');
         url.search = new URLSearchParams({
@@ -197,8 +200,10 @@ export function createChatGptPlan({ request = fetch } = {}) {
       if (path === prefix + 'stop' && req.method === 'POST') {
         if (session) {
           const old = session;
+          if (old.state === 'exchanging') return result(res, 409, { error: 'SIGN_IN_FINISHING' });
           sessions.set(id, { clientId: old.clientId, subject: old.subject, hostId: old.hostId,
             state: 'disconnected', deadline: Date.now() + 10 * 60_000 });
+          for (const request of old.requests ?? []) request.abort();
           if (old.refreshing) await old.refreshing.catch(() => {});
           let revoked = !old.refresh;
           if (old.refresh) {
@@ -236,17 +241,25 @@ export function createChatGptPlan({ request = fetch } = {}) {
         const cancellation = new AbortController();
         res.on('close', () => cancellation.abort());
         if (res.destroyed) return;
-        const response = await upstream(api + '/responses', { method: 'POST', signal: cancellation.signal,
-          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: body.model, store: false, stream: true,
-            input: body.messages.map(({ role, content }) => ({ role: role === 'system' ? 'developer' : role, content })),
-            ...(body.json ? { text: { format: { type: 'json_object' } } } : {}) }),
-        });
-        if (response.status === 401) session.state = 'expired';
-        if (!response.ok) return result(res, response.status, { error: 'INFERENCE_UNAVAILABLE' });
-        const text = await responseText(response);
-        if (!res.destroyed && sessions.get(id) === session) return result(res, 200, { text });
-        if (!res.destroyed) return result(res, 401, { error: 'SIGN_IN_REQUIRED' });
+        session.requests.add(cancellation);
+        try {
+          const response = await upstream(api + '/responses', { method: 'POST', signal: cancellation.signal,
+            headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: body.model, store: false, stream: true,
+              input: body.messages.map(({ role, content }) => ({ role: role === 'system' ? 'developer' : role, content })),
+              ...(body.json ? { text: { format: { type: 'json_object' } } } : {}) }),
+          });
+          if (response.status === 401) session.state = 'expired';
+          if (!response.ok) return result(res, response.status, { error: 'INFERENCE_UNAVAILABLE' });
+          const text = await responseText(response);
+          if (!res.destroyed) return sessions.get(id) === session
+            ? result(res, 200, { text }) : result(res, 401, { error: 'SIGN_IN_REQUIRED' });
+        } catch (error) {
+          if (!res.destroyed && sessions.get(id) !== session) return result(res, 401, { error: 'SIGN_IN_REQUIRED' });
+          throw error;
+        } finally {
+          session.requests.delete(cancellation);
+        }
         return;
       }
       return result(res, 404, { error: 'NOT_FOUND' });

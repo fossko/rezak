@@ -15,6 +15,7 @@ let mode = 'success';
 let calls = 0;
 let revoked = false;
 let renewals = 0;
+const beganInference = Promise.withResolvers();
 
 const handler = createChatGptPlan({ request: async (url, init) => {
   if (url === issuer + '/.well-known/openid-configuration') {
@@ -55,6 +56,10 @@ const handler = createChatGptPlan({ request: async (url, init) => {
     input: [{ role: 'developer', content: 'Инструкция' }, { role: 'user', content: 'Задача' }],
     text: { format: { type: 'json_object' } },
   });
+  if (mode === 'wait') {
+    beganInference.resolve();
+    await new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true }));
+  }
   const event = value => `data: ${JSON.stringify(value)}\n\n`;
   return new Response(event({ type: 'response.output_text.delta', delta: '{"ok":true}' }) +
     (mode === 'limit' ? event({ type: 'response.failed', response: { error: { code: 'subscription_sharing_usage_limit_exceeded' } } })
@@ -125,7 +130,11 @@ try {
   assert.equal((await post('complete', input)).status, 502);
   mode = 'limit';
   assert.equal((await post('complete', input)).status, 429);
+  mode = 'wait';
+  const running = post('complete', input);
+  await beganInference.promise;
   assert.deepEqual(await (await post('stop', {})).json(), { state: 'disconnected', revoked: true });
+  assert.equal((await running).status, 401);
   assert.ok(revoked);
   assert.equal((await post('complete', input)).status, 401);
   console.log('chatgpt plan: ok');

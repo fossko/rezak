@@ -100,7 +100,7 @@ export function ChatGptPlan({ active, model, onSelect }: {
     <div className="hint">Подписка используется для запущенных вами ИИ-операций, включая пакетную обработку. Сеанс действует до остановки локального сервера или выхода.</div>
     <div className="row wrap">
       {state === 'connected' || waiting
-        ? <button type="button" className="ghost" disabled={busy} onClick={stop}>{waiting ? 'Отменить вход' : 'Отключить ChatGPT'}</button>
+        ? <button type="button" className="ghost" disabled={busy || state === 'exchanging'} onClick={stop}>{waiting ? 'Отменить вход' : 'Отключить ChatGPT'}</button>
         : <button type="button" className="ghost" disabled={busy || state === 'offline' || !state} onClick={start}>Продолжить с ChatGPT</button>}
       {link && <a href={link} target="_blank" rel="noreferrer">Открыть страницу входа ChatGPT</a>}
     </div>
