@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { LLM_PROVIDERS, loadLlmSettings, saveLlmSettings, type LlmSettingsData } from '../llm/client';
 import { ModelPicker } from './ModelPicker';
 import { testConnection } from '../llm/carve';
@@ -9,6 +9,8 @@ export function LlmSettings() {
   const [steps] = useState(() => loadSteps());
   const [msg, setMsg] = useState<{ t: string; ok: boolean } | null>(null);
   const [showKey, setShowKey] = useState(false);
+  const [showSubscription, setShowSubscription] = useState(false);
+  const subscriptionId = useId();
   const upd = (p: Partial<LlmSettingsData>) => { const n = { ...s, ...p }; setS(n); saveLlmSettings(n); };
   const stepModels = s.stepModels || {};
   const setStepModel = (id: string, model: string) => upd({ stepModels: { ...stepModels, [id]: model } });
@@ -22,6 +24,29 @@ export function LlmSettings() {
   const prov = LLM_PROVIDERS[s.provider];
   return (
     <div className="col">
+      <div className="row">
+        <button type="button" className="ghost" aria-expanded={showSubscription} aria-controls={subscriptionId}
+          onClick={() => setShowSubscription(!showSubscription)}>
+          Подключить подписку
+        </button>
+      </div>
+      <div id={subscriptionId} hidden={!showSubscription}>
+        <p className="hint">Вход по подписке работает в официальных клиентах. ИИ-операции в Резаке пока используют настройки API ниже.</p>
+        <h3>Codex (ChatGPT)</h3>
+        <ol>
+          <li>Включите вход по коду устройства в настройках безопасности ChatGPT.</li>
+          <li>В терминале с установленным Codex выполните <code>codex login --device-auth</code>.</li>
+          <li>Откройте адрес из терминала, войдите в свой аккаунт ChatGPT и введите одноразовый код, который выдал Codex.</li>
+        </ol>
+        <a href="https://learn.chatgpt.com/docs/auth#login-on-headless-devices" target="_blank" rel="noreferrer">Справка по входу в Codex</a>
+        <h3>Claude Code</h3>
+        <ol>
+          <li>В терминале с установленным Claude Code выполните <code>claude auth login</code>.</li>
+          <li>Войдите в свой аккаунт Claude в открывшемся браузере. Если браузер сам не открылся, используйте адрес из терминала.</li>
+          <li>Если браузер покажет код, введите его в терминале Claude Code.</li>
+        </ol>
+        <a href="https://code.claude.com/docs/en/authentication" target="_blank" rel="noreferrer">Справка по входу в Claude Code</a>
+      </div>
       <div className="hint tip">Подходит любой сервис с OpenAI-совместимым API. Ключ хранится только в этом браузере. В сервис отправляется только текст расшифровки.</div>
       <label className="col" style={{ gap: 4 }}>Сервис
         <select value={s.provider} onChange={(e) => { const p = LLM_PROVIDERS[e.target.value]; upd({ provider: e.target.value, url: p.url || s.url, model: '' }); setMsg(null); }}>
