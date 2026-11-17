@@ -26,7 +26,7 @@ export function ModelPicker({ settings, onChange, compact }: { settings: LlmSett
     const id = ++reqId.current;
     setLoading(true); setErr('');
     try {
-      const list = await listModels(llmConfig({ ...settings, model: settings.model || 'x' }));
+      const list = await listModels(llmConfig({ ...settings, chatGptPlan: false, model: settings.model || 'x' }));
       if (id !== reqId.current) return;
       cache.set(k, list); setModels(list);
       if (!list.length) setErr('Сервис не вернул список моделей — введите название вручную');

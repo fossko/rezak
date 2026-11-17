@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { servedFile } from './server/served-file.mjs';
+import { createChatGptPlan } from './server/chatgpt-plan.mjs';
 
 const MODELS_MIME: Record<string, string> = {
   '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.onnx': 'application/octet-stream',
@@ -34,11 +35,20 @@ function serveModels(): Plugin {
   };
 }
 
+function chatGptPlan(): Plugin {
+  return {
+    name: 'rezak-chatgpt-plan',
+    configureServer: server => { server.middlewares.use(createChatGptPlan()); },
+    configurePreviewServer: server => { server.middlewares.use(createChatGptPlan()); },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), serveModels()],
+  plugins: [react(), serveModels(), chatGptPlan()],
   base: './',
   worker: { format: 'es' },
   build: { target: 'es2022', chunkSizeWarningLimit: 4000, sourcemap: false },
   optimizeDeps: { exclude: ['@huggingface/transformers'] },
-  server: { port: 5199, strictPort: true },
+  server: { host: '127.0.0.1', port: 5199, strictPort: true },
+  preview: { host: '127.0.0.1' },
 });

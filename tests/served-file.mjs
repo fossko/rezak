@@ -33,6 +33,7 @@ try {
   await writeFile(join(temp, 'dist', 'index.html'), '<title>Резак</title>');
   await copyFile(new URL('../serve.mjs', import.meta.url), join(temp, 'serve.mjs'));
   await copyFile(new URL('../server/served-file.mjs', import.meta.url), join(temp, 'server', 'served-file.mjs'));
+  await copyFile(new URL('../server/chatgpt-plan.mjs', import.meta.url), join(temp, 'server', 'chatgpt-plan.mjs'));
   const server = spawn(process.execPath, [join(temp, 'serve.mjs'), '0'], { stdio: ['ignore', 'pipe', 'inherit'] });
   const stopped = once(server, 'exit');
   try {

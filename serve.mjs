@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { servedFile } from './server/served-file.mjs';
+import { createChatGptPlan } from './server/chatgpt-plan.mjs';
 
 const root = fileURLToPath(new URL('./dist', import.meta.url));
 const modelsRoot = fileURLToPath(new URL('./models', import.meta.url));
@@ -16,7 +17,8 @@ const MIME = {
   '.map': 'application/json', '.txt': 'text/plain; charset=utf-8',
 };
 
-const server = createServer(async (req, res) => {
+const chatGptPlan = createChatGptPlan();
+const server = createServer((req, res) => chatGptPlan(req, res, async () => {
   try {
     const pathname = decodeURIComponent(req.url.split('?')[0]).replace(/\\/g, '/');
     const model = pathname.startsWith('/models/');
@@ -33,5 +35,5 @@ const server = createServer(async (req, res) => {
   } catch {
     res.writeHead(404).end('not found');
   }
-});
+}));
 server.listen(port, '127.0.0.1', () => console.log(`Carver → http://127.0.0.1:${server.address().port}/   (dist/, Ctrl+C to stop)`));

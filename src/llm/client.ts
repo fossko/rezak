@@ -23,6 +23,8 @@ export interface LlmSettingsData {
   thinking: Thinking;
   /** Optional model override per pipeline step id (e.g. spelling: deepseek-chat, structured: deepseek-reasoner). */
   stepModels: Record<string, string>;
+  chatGptPlan?: boolean;
+  chatGptModel?: string;
 }
 export type Thinking = 'auto' | 'low' | 'off';
 
@@ -41,6 +43,7 @@ export interface LlmConfig {
   requestTimeoutMs?: number;
   /** Optional, best-effort diagnostics; exceptions are swallowed. */
   onEvent?: (event: LlmEvent) => void;
+  chatGptPlan?: boolean;
 }
 
 /** Live progress of one request. `wait` = sent, nothing received yet (model loading / prompt processing /
@@ -80,6 +83,14 @@ export function loadLlmSettings(): LlmSettingsData {
 export function saveLlmSettings(s: LlmSettingsData) { localStorage.setItem(KEY, JSON.stringify(s)); }
 
 export function llmConfig(s = loadLlmSettings()): LlmConfig {
+  if (s.chatGptPlan) {
+    if (!s.chatGptModel) throw new Error('Выберите модель подписки ChatGPT в настройках ИИ.');
+    return {
+      url: location.origin, key: '', model: s.chatGptModel, chatGptPlan: true,
+      temperature: null, maxTokens: null, stepModels: {}, extraBody: {}, extraHeaders: {}, thinking: 'auto',
+      chunkChars: Math.max(1000, +s.chunkChars || 20000), parallel: Math.max(1, Math.min(8, +s.parallel || 1)),
+    };
+  }
   const parseObj = (str: string, what: string) => {
     if (!str.trim()) return {};
     try { const v = JSON.parse(str); if (v && typeof v === 'object' && !Array.isArray(v)) return v; } catch { /* */ }
@@ -157,6 +168,26 @@ export async function chatComplete(cfg: LlmConfig, messages: Msg[], o: { signal?
   if (cfg.requestTimeoutMs) {
     const timeout = AbortSignal.timeout(cfg.requestTimeoutMs);
     o = { ...o, signal: o.signal ? AbortSignal.any([o.signal, timeout]) : timeout };
+  }
+  if (cfg.chatGptPlan) {
+    const since = performance.now();
+    o.onPhase?.({ stage: 'wait', since, thinkChars: 0, textChars: 0 });
+    const response = await fetch('/api/chatgpt-plan/complete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: o.signal,
+      body: JSON.stringify({ model: cfg.model, messages, json: !!o.json }),
+    });
+    if (!response.ok) {
+      const hints: Record<number, string> = {
+        401: 'Войдите в ChatGPT заново в настройках ИИ.',
+        403: 'Использование подписки ChatGPT недоступно для этого запроса.',
+        429: 'Превышен лимит подписки ChatGPT.',
+      };
+      throw new Error(hints[response.status] || `Запрос по подписке ChatGPT завершился с ошибкой (HTTP ${response.status}).`);
+    }
+    const { text } = await response.json() as { text: string };
+    o.onText?.(text);
+    o.onPhase?.({ stage: 'write', since, thinkChars: 0, textChars: text.length });
+    return text;
   }
   const compat = (compatMap[cfg.url + '|' + cfg.model] ||= {});
   const ph: Phase = { stage: 'wait', thinkChars: 0, textChars: 0, since: performance.now() };

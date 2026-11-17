@@ -3,6 +3,7 @@ import { LLM_PROVIDERS, loadLlmSettings, saveLlmSettings, type LlmSettingsData }
 import { ModelPicker } from './ModelPicker';
 import { testConnection } from '../llm/carve';
 import { loadSteps } from '../llm/pipeline';
+import { ChatGptPlan } from './ChatGptPlan';
 
 export function LlmSettings() {
   const [s, setS] = useState<LlmSettingsData>(loadLlmSettings());
@@ -31,7 +32,9 @@ export function LlmSettings() {
         </button>
       </div>
       <div id={subscriptionId} hidden={!showSubscription}>
-        <p className="hint">Вход по подписке работает в официальных клиентах. ИИ-операции в Резаке пока используют настройки API ниже.</p>
+        <h3>ChatGPT в Rezak</h3>
+        {showSubscription && <ChatGptPlan active={!!s.chatGptPlan} model={s.chatGptModel}
+          onSelect={model => upd(model ? { chatGptPlan: true, chatGptModel: model } : { chatGptPlan: false })} />}
         <h3>Codex (ChatGPT)</h3>
         <ol>
           <li>Включите вход по коду устройства в настройках безопасности ChatGPT.</li>
