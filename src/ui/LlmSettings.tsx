@@ -42,13 +42,6 @@ export function LlmSettings() {
           <li>Откройте <a href="https://auth.openai.com/codex/device" target="_blank" rel="noreferrer">auth.openai.com/codex/device</a>, войдите в ChatGPT и введите одноразовый код из терминала.</li>
         </ol>
         <a href="https://learn.chatgpt.com/docs/auth#login-on-headless-devices" target="_blank" rel="noreferrer">Справка по входу в Codex</a>
-        <h3>Claude Code</h3>
-        <ol>
-          <li>В терминале с установленным Claude Code выполните <code>claude auth login</code>.</li>
-          <li>Войдите в свой аккаунт Claude в открывшемся браузере. Если браузер сам не открылся, используйте адрес из терминала.</li>
-          <li>Если браузер покажет код, введите его в терминале Claude Code.</li>
-        </ol>
-        <a href="https://code.claude.com/docs/en/authentication" target="_blank" rel="noreferrer">Справка по входу в Claude Code</a>
       </div>
       <div className="hint tip">Подходит любой сервис с OpenAI-совместимым API. Ключ хранится только в этом браузере. В сервис отправляется только текст расшифровки.</div>
       <label className="col" style={{ gap: 4 }}>Сервис
@@ -64,7 +57,7 @@ export function LlmSettings() {
           <button className="small ghost" onClick={() => setShowKey(!showKey)}>{showKey ? 'скрыть' : 'показать'}</button></div>
       </label>
       <div className="col" style={{ gap: 4 }}><label>Модель</label>
-        <ModelPicker settings={s} onChange={(model) => { upd({ model }); setMsg(null); }} />
+        <ModelPicker settings={{ ...s, chatGptPlan: false }} onChange={(model) => { upd({ model }); setMsg(null); }} />
         <span className="hint tip">Список моделей загружается у сервиса, когда вы открываете его или меняете адрес / ключ.</span>
       </div>
       <details>

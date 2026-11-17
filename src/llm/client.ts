@@ -115,6 +115,15 @@ export function llmConfig(s = loadLlmSettings()): LlmConfig {
 }
 export const llmConfigured = () => { try { llmConfig(); return true; } catch { return false; } };
 
+export async function listChatGptModels(): Promise<{ id: string; name: string }[]> {
+  const response = await fetch('/api/chatgpt-plan/models');
+  if (response.status === 401) throw new Error('Войдите в ChatGPT заново в настройках ИИ.');
+  if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
+    throw new Error('Не удалось загрузить модели подписки ChatGPT.');
+  }
+  return (await response.json()).models;
+}
+
 const isAbort = (e: any) => e && (e.name === 'AbortError' || e.name === 'TimeoutError');
 const requestId = () => { try { return crypto.randomUUID(); } catch { return `${Date.now()}-${Math.random().toString(36).slice(2)}`; } };
 const safeUrl = (url: string) => { try { const u = new URL(url); u.username = ''; u.password = ''; u.search = ''; u.hash = ''; return u.toString(); } catch { return '[invalid url]'; } };

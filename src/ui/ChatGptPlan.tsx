@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { listChatGptModels } from '../llm/client';
 
 const base = '/api/chatgpt-plan/';
 type Model = { id: string; name: string };
@@ -53,7 +54,7 @@ export function ChatGptPlan({ active, model, onSelect }: {
   useEffect(() => {
     if (state !== 'connected') { setModels([]); return; }
     let current = true;
-    void call<{ models: Model[] }>('models').then(({ models }) => {
+    void listChatGptModels().then(models => {
       if (current) setModels(models);
     }).catch(() => {
       if (current) setMessage('Список моделей подписки недоступен. Проверьте доступ в ChatGPT или войдите заново.');

@@ -110,7 +110,11 @@ export function AiPanel() {
       </div>
       <div className="col" style={{ gap: 4 }}>
         <span className="muted" style={{ fontSize: 13 }}>Модель</span>
-        <ModelPicker settings={loadLlmSettings()} onChange={(model) => { saveLlmSettings({ ...loadLlmSettings(), model }); S.bump(); }} />
+        <ModelPicker settings={loadLlmSettings()} onChange={(model) => {
+          const settings = loadLlmSettings();
+          saveLlmSettings(settings.chatGptPlan ? { ...settings, chatGptModel: model } : { ...settings, model });
+          S.bump();
+        }} />
       </div>
       <div className="row wrap">
         <button className="primary" disabled={busy || !p.words.length} onClick={() => runCarve('all', o.strength, o.auto)}>

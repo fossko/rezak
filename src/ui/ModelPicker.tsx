@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { listModels, llmConfig, type LlmSettingsData } from '../llm/client';
+import { listChatGptModels, listModels, llmConfig, type LlmSettingsData } from '../llm/client';
 
 // model lists per endpoint+key, shared by every picker on the page
 const cache = new Map<string, string[]>();
-const keyOf = (s: LlmSettingsData) => s.url.trim().replace(/\/+$/, '') + '|' + s.key.trim();
+const keyOf = (s: LlmSettingsData) => s.chatGptPlan ? 'chatgpt-plan' : s.url.trim().replace(/\/+$/, '') + '|' + s.key.trim();
 const validUrl = (u: string) => /^https?:\/\/\S+$/.test(u.trim());
 
 /** Searchable model dropdown. Fetches GET {url}/models when opened, and (debounced) whenever the
@@ -19,17 +19,22 @@ export function ModelPicker({ settings, onChange, compact }: { settings: LlmSett
   const search = useRef<HTMLInputElement>(null);
   const reqId = useRef(0);
   const k = keyOf(settings);
+  const subscription = !!settings.chatGptPlan;
+  const selected = subscription ? settings.chatGptModel : settings.model;
 
   const fetchList = async (force = false) => {
-    if (!validUrl(settings.url)) { setErr('Укажите адрес API'); return; }
-    if (!force && cache.has(k)) { setModels(cache.get(k)!); setErr(''); return; }
+    if (!subscription && !validUrl(settings.url)) { setErr('Укажите адрес API'); return; }
+    if (!subscription && !force && cache.has(k)) { setModels(cache.get(k)!); setErr(''); return; }
     const id = ++reqId.current;
     setLoading(true); setErr('');
+    if (subscription) setModels(null);
     try {
-      const list = await listModels(llmConfig({ ...settings, chatGptPlan: false, model: settings.model || 'x' }));
+      const list = subscription ? (await listChatGptModels()).map(model => model.id)
+        : await listModels(llmConfig({ ...settings, model: settings.model || 'x' }));
       if (id !== reqId.current) return;
-      cache.set(k, list); setModels(list);
-      if (!list.length) setErr('Сервис не вернул список моделей — введите название вручную');
+      if (!subscription) cache.set(k, list);
+      setModels(list);
+      if (!list.length) setErr(subscription ? 'Для подписки нет доступных моделей.' : 'Сервис не вернул список моделей — введите название вручную');
     } catch (e: any) {
       if (id !== reqId.current) return;
       setModels(null); setErr(String(e.message || e).split('\n')[0]);
@@ -38,8 +43,12 @@ export function ModelPicker({ settings, onChange, compact }: { settings: LlmSett
 
   // endpoint / key pasted or edited: refresh the list in the background
   useEffect(() => {
+    reqId.current++;
     setModels(cache.get(k) || null);
-    if (!validUrl(settings.url)) return;
+    setLoading(false);
+    setErr('');
+    if (open) { void fetchList(); return; }
+    if (subscription || !validUrl(settings.url)) return;
     const t = setTimeout(() => fetchList(), 700);
     return () => clearTimeout(t);
   }, [k]);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -59,20 +68,20 @@ export function ModelPicker({ settings, onChange, compact }: { settings: LlmSett
     const l = models || [];
     return (t ? l.filter((m) => m.toLowerCase().includes(t)) : l).slice(0, 400);
   }, [models, q]);
-  const custom = q.trim() && !(models || []).includes(q.trim()) ? q.trim() : '';
+  const custom = !subscription && q.trim() && !(models || []).includes(q.trim()) ? q.trim() : '';
   const items = custom ? [...filtered, custom] : filtered;
   const pick = (m: string) => { onChange(m); setOpen(false); };
 
   return (
     <div className={'mpick' + (compact ? ' compact' : '')} ref={box}>
       <button type="button" className="mpick-btn" onClick={() => setOpen(!open)} title="Модель (список загружается у сервиса)">
-        <span className={'grow mpick-cur' + (settings.model ? '' : ' dim')}>{settings.model || 'Выберите модель'}</span>
+        <span className={'grow mpick-cur' + (selected ? '' : ' dim')}>{selected || 'Выберите модель'}</span>
         {loading ? <span className="spin" /> : <span className="dim">▾</span>}
       </button>
       {open && (
         <div className="mpick-pop">
           <div className="row" style={{ gap: 6 }}>
-            <input ref={search} className="grow" value={q} placeholder="Поиск или своё название…" spellCheck={false}
+            <input ref={search} className="grow" value={q} placeholder={subscription ? 'Поиск модели подписки…' : 'Поиск или своё название…'} spellCheck={false}
               onChange={(e) => { setQ(e.target.value); setHi(0); }}
               onKeyDown={(e) => {
                 if (e.key === 'ArrowDown') { e.preventDefault(); setHi((h) => Math.min(items.length - 1, h + 1)); }
@@ -86,7 +95,7 @@ export function ModelPicker({ settings, onChange, compact }: { settings: LlmSett
             {loading && !models && <div className="mpick-note"><span className="spin" /> Загрузка списка моделей…</div>}
             {err && <div className="mpick-note err">{err}</div>}
             {filtered.map((m, i) => (
-              <div key={m} className={'mpick-item' + (i === hi ? ' hi' : '') + (m === settings.model ? ' cur' : '')}
+              <div key={m} className={'mpick-item' + (i === hi ? ' hi' : '') + (m === selected ? ' cur' : '')}
                 onMouseEnter={() => setHi(i)} onMouseDown={(e) => { e.preventDefault(); pick(m); }}>{m}</div>
             ))}
             {custom && <div className={'mpick-item custom' + (hi === filtered.length ? ' hi' : '')}
