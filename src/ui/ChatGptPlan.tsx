@@ -119,5 +119,9 @@ export function ChatGptPlan({ active, model, onSelect }: {
       <button type="button" className="ghost" onClick={() => onSelect(null)}>Использовать настройки API</button>
     </div>}
     {(message || notices[state]) && <div role="status">{message || notices[state]}</div>}
+    <ul className="hint">
+      <li><strong>Посмотреть или отозвать разрешение.</strong> В ChatGPT откройте «Настройки → Безопасность и вход (Security and login) → Подключения для входа (Login connections) → Вход через ChatGPT (Sign in with ChatGPT) → Rezak». Там можно выбрать «Отключить» (Disconnect). <a href="https://help.openai.com/en/articles/20001542-using-your-chatgpt-plan-in-other-apps-and-sites" target="_blank" rel="noreferrer">Инструкция OpenAI</a>.</li>
+      <li><strong>Посмотреть расход подписки.</strong> В ChatGPT откройте «Настройки → Использование (Usage) → Лимиты приложений (App limits) → Rezak». Там видно, сколько лимита использовал Rezak, и можно задать недельный лимит. <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">Открыть настройки использования ChatGPT</a>.</li>
+    </ul>
   </div>;
 }

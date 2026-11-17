@@ -66,6 +66,9 @@ try {
     assert.equal(await button.getAttribute('aria-expanded'), 'true');
     assert.equal(await apiAddress.isVisible(), false);
     assert.ok(await page.getByRole('heading', { name: 'ChatGPT в Rezak' }).isVisible());
+    assert.equal(await page.getByRole('link', { name: 'Открыть настройки использования ChatGPT' }).getAttribute('href'),
+      'https://chatgpt.com/settings/usage');
+    assert.ok(await page.getByRole('link', { name: 'Инструкция OpenAI' }).isVisible());
     assert.equal(await page.getByText('codex login --device-auth', { exact: true }).count(), 0);
     assert.equal(await page.getByRole('link', { name: 'auth.openai.com/codex/device', exact: true }).count(), 0);
 
