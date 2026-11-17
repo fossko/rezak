@@ -50,6 +50,8 @@ try {
     assert.ok(await page.getByText('codex login --device-auth', { exact: true }).isVisible());
     assert.ok(await page.getByText('claude auth login', { exact: true }).isVisible());
     assert.ok(await page.getByText(/ИИ-операции в Резаке пока используют настройки API/).isVisible());
+    assert.equal(await page.getByRole('link', { name: 'auth.openai.com/codex/device', exact: true }).getAttribute('href'),
+      'https://auth.openai.com/codex/device');
     assert.equal(await page.getByRole('link', { name: 'Справка по входу в Codex' }).getAttribute('href'),
       'https://learn.chatgpt.com/docs/auth#login-on-headless-devices');
     assert.equal(await page.getByRole('link', { name: 'Справка по входу в Claude Code' }).getAttribute('href'),

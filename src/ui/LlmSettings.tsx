@@ -36,7 +36,7 @@ export function LlmSettings() {
         <ol>
           <li>Включите вход по коду устройства в настройках безопасности ChatGPT.</li>
           <li>В терминале с установленным Codex выполните <code>codex login --device-auth</code>.</li>
-          <li>Откройте адрес из терминала, войдите в свой аккаунт ChatGPT и введите одноразовый код, который выдал Codex.</li>
+          <li>Откройте <a href="https://auth.openai.com/codex/device" target="_blank" rel="noreferrer">auth.openai.com/codex/device</a>, войдите в ChatGPT и введите одноразовый код из терминала.</li>
         </ol>
         <a href="https://learn.chatgpt.com/docs/auth#login-on-headless-devices" target="_blank" rel="noreferrer">Справка по входу в Codex</a>
         <h3>Claude Code</h3>
