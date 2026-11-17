@@ -51,7 +51,7 @@ try {
   const cookie = enter.headers.get('set-cookie').split(';')[0];
   for (const id of ['p1', 'p2']) {
     const r = await fetch(`${base}/api/workspace/projects/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify({ data: { id, name: id, words: [] }, revision: 0 }) });
-    assert.equal(r.status, 200);
+    assert.equal(r.status, 200, r.ok ? undefined : await r.text());
   }
 
   // Stats reflect the stored projects.

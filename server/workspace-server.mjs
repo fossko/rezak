@@ -5,12 +5,18 @@ import { createServer } from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename, rm, stat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import { createWorkspaceQueue } from './workspace-queue.mjs';
 
 const port = Number(process.argv[2] || 8787);
 const root = process.env.CARVER_WORKSPACE_DIR || join(process.cwd(), '.workspaces');
 const adminSecret = process.env.CARVER_ADMIN_SECRET;
 const adminUser = process.env.CARVER_ADMIN_USER || 'rezak';
 const adminPassword = process.env.CARVER_ADMIN_PASSWORD;
+const projectQuota = Number(process.env.CARVER_WORKSPACE_PROJECT_BYTES ?? 100 * 1024 ** 2);
+if (!Number.isSafeInteger(projectQuota) || projectQuota < 2) {
+  throw new Error('CARVER_WORKSPACE_PROJECT_BYTES must be an integer of at least 2');
+}
 // The public URL used to build workspace login links. Set CARVER_PUBLIC_ORIGIN in production;
 // the localhost default keeps a fresh checkout usable without configuration.
 const publicOrigin = (process.env.CARVER_PUBLIC_ORIGIN || `http://localhost:${port}`).replace(/\/+$/, '');
@@ -18,34 +24,42 @@ if (!adminSecret || !adminPassword) throw new Error('CARVER_ADMIN_SECRET and CAR
 const sessions = new Map();
 // Sessions are written to disk so a service restart (a deploy) does not log every open tab out.
 const sessionsPath = join(root, 'sessions.dat');
+let sessionWrites = Promise.resolve();
 async function loadSessions() {
   try {
     const saved = JSON.parse(await readFile(sessionsPath, 'utf8'));
     for (const [token, id] of Object.entries(saved)) if (typeof token === 'string' && typeof id === 'string') sessions.set(token, id);
   } catch { /* first start */ }
 }
-async function saveSessions() {
-  try {
+function saveSessions() {
+  sessionWrites = sessionWrites.then(async () => {
     const entries = [...sessions.entries()].slice(-5000);   // bounded: oldest logins are forgotten first
-    const tmp = `${sessionsPath}.tmp-${randomBytes(4).toString('hex')}`;
-    await writeFile(tmp, JSON.stringify(Object.fromEntries(entries)));
-    await rename(tmp, sessionsPath);
-  } catch { /* a missing session file only means another login */ }
+    await writeAtomically(sessionsPath, JSON.stringify(Object.fromEntries(entries)));
+  }).catch(() => { /* a missing session file only means another login */ });
+  return sessionWrites;
 }
 const SAFE_ID = /^[a-zA-Z0-9_-]{1,64}$/;
-const json = (res, code, value, extra = {}) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...extra }); res.end(JSON.stringify(value)); };
+const json = (res, code, value, extra = {}) => {
+  if (res.headersSent || res.destroyed) return;
+  res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...extra });
+  res.end(JSON.stringify(value));
+};
 const MAX_BODY = 20_000_000, BODY_TIMEOUT_MS = 20_000, JOB_TIMEOUT_MS = 45_000;
 /** Read a JSON body, but never leave a Promise (and the workspace's write queue) pending forever when the
  *  client disconnects mid-upload or stalls. That used to wedge one workspace until a service restart. */
 const readBody = req => new Promise((resolve, reject) => {
-  let s = '', settled = false, timer;
+  let s = '', bytes = 0, settled = false, timer;
   const cleanup = () => {
     clearTimeout(timer);
     req.off('data', onData); req.off('end', onEnd); req.off('aborted', onAbort); req.off('error', onAbort); req.off('close', onClose);
   };
   const finish = (fn, value) => { if (settled) return; settled = true; cleanup(); fn(value); };
   const fail = (message, status) => { const e = new Error(message); e.status = status; finish(reject, e); };
-  function onData(chunk) { s += chunk; if (s.length > MAX_BODY) { req.destroy(); fail('body too large', 413); } }
+  function onData(chunk) {
+    bytes += Buffer.byteLength(chunk);
+    if (bytes > MAX_BODY) { req.destroy(); fail('body too large', 413); return; }
+    s += chunk;
+  }
   function onEnd() {
     if (settled) return;
     let parsed;
@@ -54,40 +68,68 @@ const readBody = req => new Promise((resolve, reject) => {
   }
   function onAbort() { fail('request aborted', 400); }
   function onClose() { if (!req.complete) fail('request aborted', 400); }
+  req.setEncoding('utf8');
   req.on('data', onData); req.on('end', onEnd); req.on('aborted', onAbort); req.on('error', onAbort); req.on('close', onClose);
   timer = setTimeout(() => { req.destroy(); fail('request body timeout', 408); }, BODY_TIMEOUT_MS);
 });
-function withTimeout(promise, ms, message) {
-  let timer;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => { const e = new Error(message); e.status = 503; reject(e); }, ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-}
 const workspacePath = id => join(root, `${id}.json`);
 
 /** One promise chain per workspace id: every read-modify-write of a workspace file runs alone, so two
  *  participants saving at the same moment cannot interleave (that used to drop updates and, worse, let a
  *  read catch a half-written file and fail with a JSON syntax error). */
-const queues = new Map();
-function exclusive(key, job) {
-  const prev = queues.get(key) || Promise.resolve();
-  // Start the job only after the previous one settles, and put a bound on the job itself so one stuck
-  // upload cannot block every later request for this workspace forever.
-  const guarded = () => withTimeout(Promise.resolve().then(job), JOB_TIMEOUT_MS, 'workspace operation timeout');
-  const run = prev.then(guarded, guarded);
-  queues.set(key, run.then(() => {}, () => {}));
-  return run;
+const exclusive = createWorkspaceQueue(JOB_TIMEOUT_MS);
+const mediaFields = new Set(['videoBytes', 'audioBytes', 'mediaBytes']);
+const freeTextFields = new Set(['text', 'notes', 'name', 'content', 'map', 'reduce']);
+function validProjectData(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  const pending = [data];
+  while (pending.length) {
+    for (const [key, value] of Object.entries(pending.pop())) {
+      if (mediaFields.has(key)) return false;
+      if (value && typeof value === 'object') pending.push(value);
+      if (typeof value === 'string' && !freeTextFields.has(key) && /^data:(audio|video)\//i.test(value.trimStart())) return false;
+    }
+  }
+  return true;
+}
+function projectBytes(projects) {
+  // Count the array as serialized inside a workspace object, including its indentation.
+  return Buffer.byteLength(JSON.stringify({ projects }, null, 2)) - Buffer.byteLength('{\n  "projects": \n}');
+}
+function checkProjectQuota(projects, previousBytes = 0) {
+  const bytes = projectBytes(projects);
+  if (bytes > projectQuota && bytes >= previousBytes) {
+    throw Object.assign(new Error('WORKSPACE_QUOTA_EXCEEDED'), { status: 413 });
+  }
 }
 async function load(id) { return JSON.parse(await readFile(workspacePath(id), 'utf8')); }
-/** Atomic write: a reader sees either the old file or the new one, never a partial one. */
+async function replaceFile(source, target) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rename(source, target);
+      return;
+    } catch (error) {
+      // Concurrent readers and antivirus can briefly prevent replacement on Windows.
+      if (process.platform !== 'win32' || attempt === 4 ||
+          !['EPERM', 'EACCES', 'EBUSY'].includes(error.code)) throw error;
+      await delay(10 * 2 ** attempt);
+    }
+  }
+}
+/** A reader sees either the old file or the new one. */
+async function writeAtomically(target, contents) {
+  const tmp = `${target}.tmp-${randomBytes(6).toString('hex')}`;
+  try {
+    await writeFile(tmp, contents);
+    await replaceFile(tmp, target);
+  } catch (error) {
+    await rm(tmp, { force: true, maxRetries: 4, retryDelay: 20 });
+    throw error;
+  }
+}
 async function save(ws) {
   ws.updatedAt = Date.now();
-  const target = workspacePath(ws.id);
-  const tmp = `${target}.tmp-${randomBytes(6).toString('hex')}`;
-  await writeFile(tmp, JSON.stringify(ws, null, 2));
-  try { await rename(tmp, target); }
-  catch (e) { await rm(tmp, { force: true }); throw e; }
+  await writeAtomically(workspacePath(ws.id), JSON.stringify(ws, null, 2));
   return ws;
 }
 function cookie(req) { return (req.headers.cookie || '').match(/carver_workspace=([^;]+)/)?.[1]; }
@@ -143,6 +185,7 @@ async function duplicateWorkspace(sourceId) {
     return { ...p, id: newId, data, revision: 1, updatedAt: now };
   });
   const copy = { id, name: `${src.name || 'Рабочее пространство'} (копия)`, token: randomBytes(24).toString('base64url'), projects, locks: [], deleted: [], updatedAt: now };
+  checkProjectQuota(projects);
   await save(copy);
   return copy;
 }
@@ -346,7 +389,7 @@ const server = createServer(async (req, res) => {
       }
       if (!found) return json(res, 404, { error: 'invalid workspace link' });
       const session = randomBytes(32).toString('base64url'); sessions.set(session, found.id);
-      void saveSessions();
+      await saveSessions();
       return json(res, 204, null, { 'Set-Cookie': `carver_workspace=${session}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000` });
     }
     const session = cookie(req); const id = session && sessions.get(session);
@@ -389,15 +432,29 @@ const server = createServer(async (req, res) => {
           await save(ws); return json(res, 204, null);
         }
         if (req.method === 'PUT' && !p && ws.deleted.some(x => x.id === projectId)) return json(res, 410, { error: 'PROJECT_DELETED' });
-        if (req.method === 'PUT') { const b = await readBody(req); if (!p) { const created = { id: projectId, name: String(b.data?.name || projectId), updatedAt: Date.now(), revision: 0, data: b.data }; ws.projects.push(created); await save(ws); return json(res, 200, created); } if (Number(b.revision) !== p.revision) return json(res, 409, { error: 'STALE_REVISION', project: p }); const bytes = JSON.stringify(b.data); if (bytes.includes('videoBytes') || bytes.includes('data:video')) return json(res, 400, { error: 'video bytes are not allowed' }); p.data = b.data; p.revision++; p.updatedAt = Date.now(); await save(ws); return json(res, 200, p); }
+        if (req.method === 'PUT' && parts.length === 4) {
+          const body = await readBody(req);
+          if (!validProjectData(body?.data)) return json(res, 400, { error: 'INVALID_PROJECT_DATA' });
+          if (p && Number(body.revision) !== p.revision) return json(res, 409, { error: 'STALE_REVISION', project: p });
+          const previousBytes = p ? projectBytes(ws.projects) : 0;
+          const updated = p
+            ? { ...p, data: body.data, revision: p.revision + 1, updatedAt: Date.now() }
+            : { id: projectId, name: String(body.data.name || projectId), updatedAt: Date.now(), revision: 0, data: body.data };
+          ws.projects = p ? ws.projects.map(project => project === p ? updated : project) : [...ws.projects, updated];
+          checkProjectQuota(ws.projects, previousBytes);
+          await save(ws);
+          return json(res, 200, updated);
+        }
         if (parts[4] === 'notes' && req.method === 'PATCH') {
           // Notes are patched separately: a stale copy of the project must not overwrite everything else.
           if (!p) return json(res, 404, { error: 'project not found' });
           const body = await readBody(req);
           const notes = String(body.notes ?? '');
+          const previousBytes = projectBytes(ws.projects);
           p.data = p.data && typeof p.data === 'object' ? { ...p.data, notes } : { notes };
           if (!notes.trim()) delete p.data.notes;
           p.revision++; p.updatedAt = Date.now();
+          checkProjectQuota(ws.projects, previousBytes);
           await save(ws);
           return json(res, 200, p);
         }
@@ -411,4 +468,4 @@ const server = createServer(async (req, res) => {
 server.requestTimeout = 30_000;
 server.headersTimeout = 15_000;
 server.keepAliveTimeout = 5_000;
-server.listen(port, () => console.log(`Workspace service → http://127.0.0.1:${port}`));
+server.listen(port, () => console.log(`Workspace service → http://127.0.0.1:${server.address().port}`));

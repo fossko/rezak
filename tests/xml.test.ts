@@ -30,8 +30,10 @@ function all(e: Element, tag: string): Element[] {
   return [...(e.tag === tag ? [e] : []), ...e.children.flatMap(c => all(c, tag))];
 }
 function parse(xml: string): Element {
-  const p = spawnSync('python3', [fileURLToPath(new URL('./verify_xml.py', import.meta.url))], {
+  const python = process.platform === 'win32' ? 'python' : 'python3';
+  const p = spawnSync(python, [fileURLToPath(new URL('./verify_xml.py', import.meta.url))], {
     input: xml, encoding: 'utf8', timeout: 10000, maxBuffer: 16 * 1024 * 1024,
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
   });
   assert.ifError(p.error);
   assert.equal(p.status, 0, p.stderr);
