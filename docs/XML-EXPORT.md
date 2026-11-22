@@ -1,72 +1,42 @@
-# Timeline XML export
+# Экспорт монтажной шкалы в XML
 
-The Export panel's «Экспортировать XML» button downloads a Final Cut Pro 7 XML
-interchange document (`xmeml` version 5), not the unrelated modern FCPXML format.
-It is intended for Adobe Premiere Pro and DaVinci Resolve's FCP 7 XML importers.
+Кнопка «Экспортировать XML» в панели экспорта скачивает файл обмена Final Cut Pro 7 XML (`xmeml` версии 5). Этот формат импортируют Adobe Premiere Pro и DaVinci Resolve. У современного FCPXML другой формат.
 
-## Import and relink
+## Импорт и привязка исходников
 
-1. Export XML from the edited project.
-2. Import it into Premiere Pro (File → Import) or Resolve (File → Import → Timeline).
-3. Use the editor's Locate/Relink command to select the original video and every
-   used title/intro file. Keep the original filenames, including their extensions.
+1. Экспортируйте XML из отредактированного проекта.
+2. В Premiere Pro выберите File → Import, в Resolve — File → Import → Timeline.
+3. Через Locate/Relink укажите исходное видео и файлы всех использованных заставок. Сохраните исходные имена файлов вместе с расширениями.
 
-The browser cannot discover absolute filesystem paths. The XML contains offline
-`file://localhost/<percent-encoded-original-filename>` references, not real known
-paths, browser blob URLs, or rendered videos. Media bytes are not copied into XML.
-If different source files have identical names, select the correct file for each
-reference manually. Distinct title assets still get distinct XML file IDs.
+Браузер не знает абсолютных путей к файлам. XML содержит ссылки для последующей привязки в виде `file://localhost/<percent-encoded-original-filename>`. Само медиа в XML не копируется. Если имена двух исходников совпадают, выберите файл для каждой ссылки вручную. У разных заставок свои идентификаторы файлов в XML.
 
-## What is exported
+## Что входит в экспорт
 
-- The project's **composite output timeline**: kept main-video segments, interleaved
-  with the actually inserted and trimmed title clips, in their output order.
-- Only the kept source ranges. Removed gaps are not represented as empty timeline
-  space. Each next clip starts exactly at the previous clip's end frame.
-- Linked original video/audio with each available audio channel mapped separately.
-  Titles with no audio remain silent for their duration; that is not a timeline gap.
-- Main-source frame rate and sequence dimensions; title media retains its own
-  dimensions/rate. Media is not transcoded. Different-size titles may need the NLE's
-  Fit/Scale-to-frame setting; exact browser-renderer scaling is not encoded.
-- Original unprocessed audio. Gain, loudness processing, restoration, muted words,
-  crossfades, and other audio effects are deliberately not translated.
+- Составная выходная шкала. Сохранённые фрагменты основного видео и вставленные заставки идут в порядке воспроизведения с учётом обрезки заставок.
+- Только сохранённые фрагменты исходника. Каждый клип начинается на границе окончания предыдущего.
+- Связанные видео и звук с раздельным сопоставлением аудиоканалов. Заставка без аудио занимает своё место на шкале и воспроизводится в тишине.
+- Частота кадров и размеры основной записи задают параметры последовательности. Заставки сохраняют собственную частоту и размеры. Перекодирования нет. Для заставок другого размера в видеоредакторе может понадобиться настройка Fit/Scale-to-frame.
+- Необработанный звук исходника. Усиление, обработка громкости, реставрация, приглушение слов и звуковые переходы в XML не переносятся.
 
-XML does not automatically join «Сохранить всё»: it is a separate export action.
+XML экспортируется отдельной кнопкой. «Сохранить всё» его не включает.
 
-## Frame precision
+## Точность границ
 
-XML edit points are integer frames, while the application's edit points are seconds.
-Source starts round **up** and ends **down** to retain only whole frames within kept
-ranges; removed material is never deliberately restored by outward rounding.
-This can shorten each edge by less than one source frame. Subframe fragments with
-no complete frame are omitted and the export toast reports their count.
+Границы в XML выражаются целыми кадрами, а внутри Резака — секундами. Начало исходного диапазона округляется вверх, конец вниз. Так в экспорт попадают только целые кадры внутри сохранённого диапазона. Каждая граница может сдвинуться меньше чем на кадр. Фрагменты без целого кадра пропускаются, а их число отображается в уведомлении.
 
-Sequence positions are built from accumulated retained durations, quantized to the
-sequence frame grid. They are contiguous, including when title rates differ. Source
-`in/out` and file durations use explicit source rates; sequence `start/end` use the
-sequence rate. NTSC rates use the exact `timebase * 1000 / 1001` rational (not a
-rounded decimal). Unsupported fractional rate values are rejected with a conversion
-hint, rather than silently rounded to another rate. VFR footage can nevertheless
-have a standard nominal frame rate and pass this check: VFR is **not detected or
-supported**. Use constant-frame-rate originals. This is not a general VFR conformer
-and cannot inspect source per-frame timestamps from metadata alone.
+Позиции на монтажной шкале рассчитываются из накопленной длительности сохранённых фрагментов с округлением по сетке последовательности. Стыки остаются непрерывными при разных частотах кадров у заставок и основного видео. Поля `in/out` и длительности файлов используют собственную частоту источника. Поля `start/end` используют частоту последовательности. Для NTSC применяется точное отношение `timebase * 1000 / 1001`. Неподдерживаемая дробная частота вызывает подсказку о преобразовании. Используйте исходники с постоянной частотой кадров. Видео с переменной частотой может пройти проверку, если у него стандартная номинальная частота. Проверка метаданных не анализирует время каждого кадра.
 
-## Implementation and validation
+## Реализация и проверка
 
-- `src/export/xml.ts`: browser-independent serializer and frame/rate validation.
-- `src/ui/ExportPanel.tsx`: snapshot of current timeline + download/error handling.
-- `src/lib/titles.ts`: original title filename from stored handle/File, never an
-  invented extension based on the title's display name. Old library entries work.
-- `tests/xml.test.ts` + `tests/verify_xml.py`: unit tests plus Python stdlib XML
-  parsing, file/link identity, frame bounds, and track continuity checks.
-- `tests/xml-export.mjs`: browser-level export/download checks.
+- `src/export/xml.ts` формирует XML и проверяет кадры и частоты независимо от браузера.
+- `src/ui/ExportPanel.tsx` получает снимок монтажной шкалы, запускает скачивание и обрабатывает ошибки.
+- `src/lib/titles.ts` берёт исходное имя заставки из сохранённого дескриптора или `File`. Старые записи библиотеки поддерживаются.
+- `tests/xml.test.ts` и `tests/verify_xml.py` проверяют структуру XML, идентификаторы файлов и связей, границы кадров и непрерывность дорожек. XML читается стандартной библиотекой Python.
+- `tests/xml-export.mjs` проверяет экспорт и скачивание в браузере.
 
-The format follows Apple's [FCP XML encoding examples](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/FinalCutPro_XML/Basics/Basics.html),
-[element catalog](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/FinalCutPro_XML/Elements/Elements.html),
-and the explicit mixed-rate approach in [OpenTimelineIO's FCP adapter](https://github.com/OpenTimelineIO/otio-fcp-adapter).
+Формат следует [примерам кодирования Apple](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/FinalCutPro_XML/Basics/Basics.html), [каталогу элементов](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/FinalCutPro_XML/Elements/Elements.html) и подходу к смешанным частотам из [адаптера FCP для OpenTimelineIO](https://github.com/OpenTimelineIO/otio-fcp-adapter).
 
-Run `npm test` for the core and 52 XML unit/structural cases (Python 3 required).
-Against the built preview on port 5200, run:
+Команда `npm test` запускает основные тесты и 52 модульных и структурных сценария XML. Нужен Python 3. Для браузерной проверки запустите сборку на порту 5200.
 
 ```bash
 npm run build
@@ -74,15 +44,8 @@ npx vite preview --host 127.0.0.1 --port 5200 --strictPort
 node tests/xml-export.mjs /path/to/video.mp4 --url=http://127.0.0.1:5200/
 ```
 
-The test needs a short video fixture; see `tests/fixtures/README.md`.
+Для теста нужна [короткая тестовая запись](../tests/fixtures/README.md).
 
-Verified Chrome download: four packed video clips and four linked mono audio clips,
-including one trimmed title; 50 sequence frames. The test also verifies filename
-persistence after reload, disabled states, error recovery, and always-visible warnings.
-Screenshots were captured, but visual review was unavailable in this agent session.
+В Chrome проверили скачивание файла с четырьмя видеоклипами и четырьмя связанными монофоническими аудиоклипами. В последовательности 50 кадров, включая обрезанную заставку. Тест проверяет сохранение имени после перезагрузки, недоступные действия, восстановление после ошибки и видимость предупреждений. Скриншоты записаны, визуальный просмотр остался непроверенным.
 
-Independent check: OpenTimelineIO 0.18.1 + otio-fcp-adapter 1.0.0 imported a generated
-25 fps main / 30 fps title sequence as exactly 5 seconds, with correct main/title/main
-source starts (1, 0.5, 8 seconds), durations (2, 1, 2 seconds), and video + two audio
-tracks. Structural and independent-parser tests are **not** a substitute for an
-actual Premiere/Resolve import test; neither application is available on this VPS.
+OpenTimelineIO 0.18.1 с otio-fcp-adapter 1.0.0 импортировал тестовую последовательность с основным видео 25 кадров/с и заставкой 30 кадров/с. Получилось ровно 5 секунд, исходные начала на 1, 0,5 и 8 с и длительности 2, 1 и 2 с, с одной видеодорожкой и двумя звуковыми. Практический импорт в Premiere и Resolve остался непроверенным.

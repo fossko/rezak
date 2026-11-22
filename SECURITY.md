@@ -1,69 +1,56 @@
-# Security
+# Безопасность
 
-## Reporting a vulnerability
+## Как сообщить об уязвимости
 
-Please do not open a public issue for a security problem. Contact the repository owner privately
-(for example through the GitHub profile linked to this repository) with:
+Свяжитесь с владельцем репозитория приватно, например через его профиль GitHub. Укажите:
 
-- a description of the issue and its impact;
-- steps to reproduce, or a minimal proof of concept;
-- affected version/commit and browser/platform;
-- whether any real data or credentials may have been exposed.
+- описание проблемы и её последствия
+- шаги воспроизведения или минимальный пример
+- затронутую версию или коммит, браузер и платформу
+- могли ли раскрыться реальные данные или учётные данные
 
-You will get an acknowledgement as soon as possible. Please give reasonable time for a fix before
-public disclosure.
+Владелец подтвердит получение при первой возможности. Дайте время на исправление до публичного раскрытия.
 
-## Reporting a leaked secret
+## Как сообщить об утечке секрета
 
-If you find a credential, token, password, private key or live workspace link in this repository:
+Если вы нашли в репозитории учётные данные, токен, пароль, закрытый ключ или действующую ссылку рабочего пространства:
 
-1. **Do not use it.** Do not paste it into an issue or a pull request.
-2. Contact the owner privately with the file and commit (or the approximate location).
-3. The owner must rotate/revoke the secret first, then remove it from history. Deleting the line in
-   a new commit is not sufficient: the old commit still contains it.
+1. Оставьте секрет нетронутым и держите его в тайне.
+2. Приватно сообщите владельцу имя файла и коммит или примерное расположение.
+3. Владелец должен сначала отозвать или заменить секрет, затем удалить его из истории Git. Старый коммит хранит секрет даже после удаления строки новым коммитом.
 
-`npm run check:secrets` scans tracked files for common patterns before commit. It is a safety net,
-not a guarantee; review the diff as well.
+Команда `npm run check:secrets` ищет типичные форматы секретов в отслеживаемых файлах. Перед коммитом также просмотрите diff.
 
-## What this project stores
+## Какие данные хранит проект
 
-| Data | Where | Leaves the machine? |
+| Данные | Где хранятся | Когда покидают устройство |
 |---|---|---|
-| Source video/audio | User's disk; only a file handle is remembered | No |
-| PCM and levels | IndexedDB (browser) | No |
-| Project JSON, transcript, texts | IndexedDB; optionally the workspace service | Only if a shared workspace is used |
-| LLM API key and settings | Browser `localStorage` (`carver:llm`) | Only to the LLM endpoint the user configures |
-| Workspace session cookie | Browser cookie (`carver_workspace`, HttpOnly) | To the workspace origin |
-| Models | Browser cache / optional server mirror | Downloads from Hugging Face or the mirror |
+| Исходное видео и аудио | На диске пользователя. Браузер запоминает дескриптор файла | Остаются локально |
+| PCM и уровни | В IndexedDB браузера | Остаются локально |
+| JSON проекта, расшифровка и тексты | В IndexedDB и, при совместной работе, в сервисе рабочих пространств | При синхронизации общего проекта. Расшифровка также передаётся выбранной LLM при использовании ИИ |
+| Ключ API и настройки LLM | В `localStorage` браузера (`carver:llm`) | Ключ передаётся настроенному серверу LLM |
+| Сессия рабочего пространства | В cookie `carver_workspace` с атрибутом HttpOnly | Отправляется на адрес рабочего пространства |
+| Модели | В кэше браузера или на зеркале | Скачиваются с Hugging Face или зеркала |
 
-The workspace service deliberately accepts **project JSON only**, not media bytes. It uses
-environment variables for credentials and writes data under `CARVER_WORKSPACE_DIR`.
+Сервис рабочих пространств принимает JSON проекта. Учётные данные передаются через переменные окружения, а проекты хранятся в каталоге `CARVER_WORKSPACE_DIR`.
 
-## Deployment security
+## Безопасность развёртывания
 
-- Serve the app over HTTPS. The service worker, persistent storage and file handles require a secure
-  context.
-- Set `CARVER_ADMIN_SECRET` and `CARVER_ADMIN_PASSWORD` to long random values. The service refuses
-  to start without them.
-- Keep the environment file (`/etc/rezak/workspace.env` or equivalent) at mode `0600`, owned by the
-  service user, outside the web root and outside git.
-- Put the workspace service behind the same origin and HTTPS terminator as the app; restrict
-  `/admin` if it does not need to be public.
-- Back up `CARVER_WORKSPACE_DIR` and protect the backups. They contain project text and sessions.
-- Do not add COOP/COEP headers; they are not a security feature here and they break model downloads.
-- Review third-party dependencies with `npm audit` and keep the lockfile committed.
+- Раздавайте приложение по HTTPS. Защищённый контекст нужен для service worker, постоянного хранилища и дескрипторов файлов.
+- Задайте длинные случайные значения `CARVER_ADMIN_SECRET` и `CARVER_ADMIN_PASSWORD`. Без них сервис не запускается.
+- Установите для файла переменных окружения, например `/etc/rezak/workspace.env`, права `0600` и назначьте владельцем пользователя сервиса. Держите файл вне веб-каталога и Git.
+- Разместите сервис рабочих пространств на том же источнике и за тем же HTTPS-прокси, что и приложение. Если публичный доступ к `/admin` не нужен, ограничьте его.
+- Защищайте резервные копии `CARVER_WORKSPACE_DIR`. Они содержат тексты проектов и сессии.
+- Заголовки COOP/COEP блокируют загрузку моделей. Развёртывайте приложение без них.
+- Проверяйте сторонние зависимости через `npm audit` и храните lock-файл в Git.
 
-## Known boundaries
+## Известные ограничения
 
-- The app is a client-side application: a user with control of the browser can read that browser's
-  `localStorage`, IndexedDB and decrypted media. This is expected for a local-first editor.
-- A workspace link is a bearer token. Anyone with the link can join that workspace; share it only
-  with the intended team and rotate it by creating a new workspace if it leaks.
-- The model downloads come from Hugging Face (or the operator's mirror). Treat the mirror as part of
-  your supply chain and keep it under your control.
-- The XML/text exports contain the transcript and edit decisions. Handle exported files accordingly.
+- Пользователь, управляющий браузером, может прочитать его `localStorage`, IndexedDB и декодированные данные медиа.
+- Ссылка рабочего пространства действует как токен доступа. Передавайте её только участникам команды. Если ссылка утекла, создайте новое рабочее пространство.
+- Модели загружаются с Hugging Face или зеркала. Держите зеркало под своим контролем.
+- Экспорт XML и текста содержит расшифровку и монтажные решения. Учитывайте это при передаче файлов.
 
-## Supported versions
+## Поддерживаемые версии
 
-This is a single-branch source project; security fixes land on `main`. There are no maintained
-release branches unless the owner states otherwise.
+В исходном проекте исправления безопасности попадают в ветку `main`. Отдельные ветки релизов поддерживаются только по решению владельца.

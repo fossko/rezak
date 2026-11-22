@@ -1,10 +1,8 @@
-# Test fixtures
+# Тестовые записи
 
-Test recordings are intentionally **not** committed: they are large, may contain private speech and
-are not needed to build the app.
+Готовые записи исключены из Git. Они занимают много места, могут содержать частные разговоры и не нужны для сборки приложения.
 
-Several browser tests accept an explicit video path; `tests/batch.mjs` and
-`tests/batch-results.mjs` fall back to `tests/fixtures/synthetic.mp4`. Create it locally:
+Некоторые браузерные тесты принимают путь к видео. `tests/batch.mjs` и `tests/batch-results.mjs` по умолчанию используют `tests/fixtures/synthetic.mp4`. Чтобы создать файл локально, выполните:
 
 ```bash
 ffmpeg -f lavfi -i testsrc=size=640x360:rate=30 \
@@ -13,14 +11,11 @@ ffmpeg -f lavfi -i testsrc=size=640x360:rate=30 \
        tests/fixtures/synthetic.mp4
 ```
 
-For real transcription and export checks, use a short Russian monologue instead
-(1–3 minutes is enough for the smoke tests). Put it anywhere outside the repository; `*.mp4` is
-gitignored, but keeping private recordings out of the working tree is safer.
+Для проверки расшифровки и экспорта возьмите монолог на русском языке. Для быстрой проверки достаточно 1–3 минут. Храните частные записи вне репозитория. Файлы `*.mp4` исключены из Git.
 
-The `titles` step also needs a short intro clip. Pass it as the step argument described in
-[AGENTS.md](../AGENTS.md#testing).
+Шаг `titles` также требует короткий ролик для заставки. Передайте его аргументом шага по инструкции в [AGENTS.md](../../AGENTS.md#testing).
 
-`tests/e2e.mjs` stores its Chrome profile and screenshots under `$TMPDIR`:
+`tests/e2e.mjs` хранит данные в `$TMPDIR`.
 
-- `$TMPDIR/carver-test-profile` — models and browser storage (about 2.2 GB after the first run)
-- `$TMPDIR/carver-test-out` — screenshots, exported media and JSON
+- `$TMPDIR/carver-test-profile` — модели и хранилище браузера, около 2,2 ГБ после первого запуска.
+- `$TMPDIR/carver-test-out` — скриншоты, экспортированные медиа и JSON.

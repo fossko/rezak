@@ -1,27 +1,23 @@
-# Documentation
+# Документация
 
-Start with the root [README](../README.md) for the product, and [AGENTS.md](../AGENTS.md) for the
-working rules and invariants.
+Описание редактора и быстрый старт находятся в [README](../README.md). Правила работы с репозиторием и инварианты собраны в [AGENTS.md](../AGENTS.md).
 
-| File | Read it when |
+| Документ | Содержание |
 |---|---|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | You need the system map, data flow, modules, persistence or concurrency model. |
-| [DEVELOPMENT.md](DEVELOPMENT.md) | You are setting up the project, running tests, or debugging the toolchain. |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | You are publishing the static app or running the optional workspace service. |
-| [STATUS.md](STATUS.md) | You need the implemented scope, known limitations and open questions. |
-| [HISTORY.md](HISTORY.md) | You want to know why a feature exists, what was measured, or what was rejected. |
-| [BATCH.md](BATCH.md) | You are working on the batch queue, relinking, notes or downloaded results. |
-| [WORKSPACES.md](WORKSPACES.md) | You are working on shared workspaces or the admin API. |
-| [XML-EXPORT.md](XML-EXPORT.md) | You are working on the Final Cut Pro 7 XML timeline export. |
-| [../CONTRIBUTING.md](../CONTRIBUTING.md) | You are preparing a change or a pull request. |
-| [../SECURITY.md](../SECURITY.md) | You found a vulnerability or a leaked secret. |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Архитектура, потоки данных, модули, хранение и конкурентный доступ |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Настройка окружения, запуск тестов, диагностика |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Публикация приложения, настройка сервиса рабочих пространств и зеркала моделей |
+| [STATUS.md](STATUS.md) | Реализованные возможности, ограничения и открытые вопросы |
+| [HISTORY.md](HISTORY.md) | Архив исходного проекта на русском и английском. Запросы, решения и замеры |
+| [BATCH.md](BATCH.md) | Очередь, привязка исходников, заметки и сохранённые результаты |
+| [WORKSPACES.md](WORKSPACES.md) | Совместные рабочие пространства и административный API |
+| [XML-EXPORT.md](XML-EXPORT.md) | Экспорт монтажной шкалы в XML Final Cut Pro 7 |
+| [CONTRIBUTING.md](../CONTRIBUTING.md) | Подготовка изменений и пул-реквестов |
+| [SECURITY.md](../SECURITY.md) | Сообщения об уязвимостях и утечках секретов |
 
-## Documentation rules
+## Правила оформления
 
-- UI copy is Russian; documentation and code comments are English.
-- Use `<your-domain>` / `<server-host>` in examples. Never commit real infrastructure details,
-  tokens, passwords or workspace links.
-- If you change a public command, an invariant or a deployment requirement, update the relevant doc
-  in the same change.
-- Keep the history factual: record what was requested, what was built, what was measured, and what
-  was deliberately not done.
+- Интерфейс и документация для читателей — на русском. Код, идентификаторы и комментарии — на английском.
+- В примерах используйте `<your-domain>` и `<server-host>`. Исключайте из коммитов реальные адреса инфраструктуры, токены, пароли и ссылки рабочих пространств.
+- При изменении команды, инварианта или требования к развёртыванию обновляйте соответствующий документ в том же изменении.
+- В истории фиксируйте, о чём попросили, что реализовали и измерили, какие варианты отклонили.

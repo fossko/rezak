@@ -1,174 +1,128 @@
-# Architecture
+# Архитектура
 
-This document is the map. The invariants and feature-level traps live in [AGENTS.md](../AGENTS.md);
-the decisions behind them are in [HISTORY.md](HISTORY.md). Read those before changing behavior.
+Инварианты и особенности реализации собраны в [AGENTS.md](../AGENTS.md), обоснования решений и замеры — в [истории разработки](HISTORY.md).
 
-## System context
+## Схема системы
 
-```
-┌──────────────────────────── Browser (Chrome / Edge) ────────────────────────────┐
-│                                                                                  │
-│  React UI ──► Store (singleton S) ──► Project JSON ──► IndexedDB                 │
-│                  │  │  │                                                        │
-│                  │  │  └──► EDL / composite timeline ──► Player / Export         │
-│                  │  └─────► PCM + levels ──► waveform, silence, loudness         │
-│                  └────────► Workers: speech (Whisper + wav2vec2), DSP, restore   │
-│                                                                                  │
-│  Outbound: user-configured LLM API · Hugging Face (models) · optional workspace  │
-└──────────────────────────────────────────────────────────────────────────────────┘
-             │ HTTPS (project JSON only)              │ static files
-             ▼                                        ▼
-   optional server/workspace-server.mjs        any static host / nginx
+```text
+Браузер (Chrome / Edge)
+  Интерфейс React → общее хранилище S → JSON проекта → IndexedDB
+                         ├→ EDL и составная шкала → предпросмотр и экспорт
+                         ├→ PCM и уровни → звуковая волна, паузы, громкость
+                         └→ воркеры: Whisper и wav2vec2, DSP, реставрация
 ```
 
-The editor is a static single-page app. `server/workspace-server.mjs` is optional: it stores project
-JSON for shared workspaces and never receives media bytes. There is no database, no auth provider and
-no application server in the default deployment.
+Статический хостинг раздаёт файлы одностраничного приложения. Дополнительный процесс `server/workspace-server.mjs` хранит JSON общих проектов. По умолчанию редактор обходится без сервера приложения, базы данных на сервере и провайдера авторизации.
 
-The video is never uploaded. The only data that leaves the browser is transcript text sent to the
-LLM endpoint the user configures, plus model downloads from Hugging Face / the optional mirror.
+Исходное видео, звук и PCM остаются на устройстве. При использовании ИИ текст отправляется на настроенный сервер LLM. Модели скачиваются с Hugging Face или зеркала. При совместной работе сервис получает JSON проекта по HTTPS.
 
-## Main data flow
+## Потоки данных
 
-```
-File (FileSystemFileHandle, remembered in IndexedDB)
- └─ mediabunny Input (lazy byte-range BlobSource)
-     ├─ audio → extractPcm16 → Int16Array 16 kHz mono
-     │    ├─ computeLevels (10 ms dBFS) → silence detection, waveform, auto-threshold
-     │    └─ speech.worker: Whisper (WebGPU/CPU) + wav2vec2-ru CTC alignment → Word[]
-     │         └─ fillers.ts: acoustic «эээ/ммм» in gaps, wav2vec2 veto → Word kind 'filler'
-     └─ video/audio → Player (preview) and export (render.ts / audio.ts)
+```text
+File (FileSystemFileHandle запоминается в IndexedDB)
+ └─ mediabunny Input (BlobSource читает диапазоны байтов по запросу)
+     ├─ звук → extractPcm16 → Int16Array, моно 16 кГц
+     │    ├─ computeLevels (10 мс, dBFS) → поиск пауз, волна, автопорог
+     │    └─ speech.worker: Whisper (WebGPU/CPU) и CTC-выравнивание wav2vec2-ru → Word[]
+     │         └─ fillers.ts: поиск «эээ/ммм» в паузах, проверка wav2vec2 → kind 'filler'
+     └─ видео и звук → Player и экспорт (render.ts / audio.ts)
 
-Word[] + wordState + keptSilences + rangeCuts + settings
-    ──buildEdl──► Edl { segments (kept, SOURCE time), outStarts, removed }
-Word[] + wordMute ──muteRegions──► source ranges to silence (per-output switch)
-TitleInsert[] + kept segments ──buildComposite──► output timeline with заставки
+Word[] + wordState + keptSilences + rangeCuts + настройки
+    ──buildEdl──► Edl { segments (сохранённые интервалы исходника), outStarts, removed }
+Word[] + wordMute ──muteRegions──► диапазоны приглушения (отдельно для каждого выхода)
+TitleInsert[] + сохранённые интервалы ──buildComposite──► выходная шкала с заставками
 ```
 
-All edit times are **SOURCE seconds**. The output timeline is derived; only names containing `out`
-refer to it. Conversion goes through `srcToOut` / `outToSrc` / `segAt` (`src/lib/edl.ts`) and
-`composite.srcToOut` when titles are present.
+Монтажные времена выражаются в **секундах исходника**. Имена с `out` указывают на производную шкалу результата. Переход между шкалами выполняют `srcToOut`, `outToSrc` и `segAt` из `src/lib/edl.ts`, а при заставках учитывается `composite.srcToOut`.
 
-## Module map
+## Модули
 
-| Path | Responsibility |
+| Путь | Назначение |
 |---|---|
-| `src/store.ts` | Singleton `S`: project, media, PCM, levels, EDL, selection, undo/redo, tasks, toasts, autosave, open/link/transcribe flows, filler merge, mute/мат actions, AI suggestions, side tab. `useStore(sel)` hook. |
-| `src/lib/types.ts` | Data model: `Word`, `Project`, `WS`/`MU` enums, settings defaults, `FastTrack`, `Suggestion`. |
-| `src/lib/edl.ts` | Silence detection, word cuts, `buildEdl`, `srcToOut` / `outToSrc` / `segAt`, custom cut edges. |
-| `src/lib/pcm.ts` | PCM extraction/resampling, level envelope, auto threshold, `pcmSlice`. |
-| `src/lib/media.ts` | `openMedia` (mediabunny), `MediaMeta`, `sameFile`, `mediaHasVideo`; audio-only sources have `hasVideo: false`. |
-| `src/lib/composite.ts` | Composite output timeline: kept main content interleaved with заставки. |
-| `src/lib/titles.ts` | Заставка library (metadata in IndexedDB kv, bytes in blobs), lazy open, decodability check. |
-| `src/lib/db.ts` | IndexedDB `carver`: `projects`, `blobs` (`<id>:pcm`, title bytes), `handles`, `kv` (checkpoints, export dir). |
-| `src/lib/profanity.ts` | Russian мат detector, custom list compiler (`*`, `/regex/`), `findProfanity`, `maskWord`. |
-| `src/transcribe/speech.worker.ts` | Whisper pipeline + wav2vec2 CTC; returns forced alignment and per-character `heard` tokens. |
-| `src/transcribe/run.ts` | VAD, 5-minute windows with 15 s overlap, loop guards, alignment groups, “squeezed” retries, edge snapping, paragraphs, checkpoints, model preloading. |
-| `src/transcribe/fillers.ts` | Acoustic filler detection (voiced, spectrally steady, flat pitch) + wav2vec2 veto. |
-| `src/player/player.ts` | Preview: `CanvasSink` frames on the output grid + `AudioContext` clock; fades, mute automation, playback rate. |
-| `src/player/stretch.ts` | WSOLA pitch-preserving time stretch for 0.75–2× preview. |
-| `src/lib/dsp.ts` | Block model of processed sound: phrase measurement, leveler, compressor/limiter model, modelled LUFS, calibration, exact render. |
-| `src/audio/live.ts` | `LiveMaster` (`S.live`): analysis cache, settings, model levels, exact tiles, visible samples, settle-then-measure. |
-| `src/audio/dsp.worker.ts` | DSP worker: one-pass analysis, exact 60 s tiles, exact whole-programme loudness. |
-| `src/restore/*` | Sidon speech restoration: fbank front-end, ONNX worker (WebGPU/WASM), tile cache, preview/export plans, dry/wet mix. |
-| `src/lib/leveler.ts` | Gain function from stored breakpoints, shared by player and export. |
-| `src/lib/masterchain.ts` | Master bus: soft compressor + automatic make-up + look-ahead limiter at −3 dBFS. |
-| `src/lib/loudness.ts` | BS.1770-4 meter: K-weighting, 400 ms gated blocks, short-term/LRA, true-peak estimate. |
-| `src/export/render.ts` | MP4: WebCodecs H.264 frame grid + AAC, priming delay measured/compensated, streams to a file handle. |
-| `src/export/audio.ts` | Shared sample-accurate audio renderer + MP3 export + MP3 delay measurement. |
-| `src/export/subs.ts` | SRT, JSON, plain and timecoded text on the output timeline; optional mute masking. |
-| `src/export/folder.ts` | «Сохранить всё»: remembered directory handle, per-project subfolder, file writes. |
-| `src/export/results.ts` | Batch result folder: manifest, texts, XML, previously rendered MP4. |
-| `src/export/xml.ts` | Final Cut Pro 7 XML (`xmeml` v5) serializer and frame/rate validation. |
-| `src/llm/client.ts` | OpenAI-compatible client: streaming, retries, compatibility adaptation, reasoning/thinking, model listing. |
-| `src/llm/carve.ts` | AI carving prompt, indexed transcript lines, quote → word range matching, confidence filter. |
-| `src/llm/pipeline.ts` | Text steps and map/merge for long texts. |
-| `src/llm/phase.ts` | Human-readable status for in-flight requests. |
-| `src/fasttrack.ts` | Fast-track orchestration, wake lock, notification; hooks `S.afterTranscribe`. |
-| `src/batch.ts` | Sequential batch queue: stage state, retries, stop/resume, folder relink, result download. |
-| `src/ui/*` | React components; `hub.ts` holds non-React singletons (player, scroll, time listeners). |
-| `public/sw.js` | Service worker: page network-first, hashed assets cache-first. |
-| `server/workspace-server.mjs` | Optional workspace service: project JSON, sessions, leases, admin page. |
+| `src/store.ts` | Экземпляр `S`, хук `useStore(sel)`, проект, медиа, PCM, уровни, EDL, выделение, отмена и повтор, задачи, уведомления, сохранение, открытие, привязка, расшифровка, звуки-паразиты, мат, предложения ИИ и вкладки. |
+| `src/lib/types.ts` | Модель `Word`, `Project`, причины `WS`/`MU`, настройки по умолчанию, `FastTrack`, `Suggestion`. |
+| `src/lib/edl.ts` | Поиск пауз, вырезы, `buildEdl`, преобразование времени, пользовательские границы. |
+| `src/lib/pcm.ts` | Извлечение и ресэмплинг PCM, огибающая уровней, автопорог, `pcmSlice`. |
+| `src/lib/media.ts` | `openMedia` (mediabunny), `MediaMeta`, `sameFile`, `mediaHasVideo`. Для аудио `hasVideo: false`. |
+| `src/lib/composite.ts` | Составная шкала сохранённых фрагментов с заставками. |
+| `src/lib/titles.ts` | Библиотека заставок. Метаданные в IndexedDB `kv`, байты в `blobs`, открытие по запросу, проверка декодирования. |
+| `src/lib/db.ts` | IndexedDB `carver`, таблицы `projects`, `blobs` (`<id>:pcm`, байты заставок), `handles`, `kv` (контрольные точки, папка экспорта). |
+| `src/lib/profanity.ts` | Детектор мата, пользовательские шаблоны (`*`, `/regex/`), `findProfanity`, `maskWord`. |
+| `src/transcribe/speech.worker.ts` | Whisper и CTC wav2vec2. Возвращает принудительное выравнивание и посимвольные токены `heard`. |
+| `src/transcribe/run.ts` | VAD, пятиминутные окна с перекрытием 15 с, защита от повторов, группы выравнивания и повтор при сжатых временах, уточнение границ, абзацы, контрольные точки, предзагрузка моделей. |
+| `src/transcribe/fillers.ts` | Поиск голосовых звуков-паразитов по стабильному спектру и высоте тона, отбраковка через wav2vec2. |
+| `src/player/player.ts` | Кадры `CanvasSink` по выходной сетке, часы `AudioContext`, переходы, автоматизация приглушения, скорость. |
+| `src/player/stretch.ts` | Изменение скорости 0,75–2× через WSOLA с сохранением высоты тона. |
+| `src/lib/dsp.ts` | Блочная модель звука, замер фраз, выравнивание, модель компрессора и лимитера, LUFS, калибровка и точный рендер. |
+| `src/audio/live.ts` | `LiveMaster` (`S.live`), кэш анализа, параметры, модель уровней, точные блоки и видимые сэмплы, замер после стабилизации. |
+| `src/audio/dsp.worker.ts` | Однопроходный анализ, точные блоки по 60 с, точная громкость всей записи. |
+| `src/restore/*` | Sidon, входные признаки fbank, воркер ONNX (WebGPU/WASM), кэш блоков, планы предпросмотра и экспорта, смешивание обработанного и исходного звука. |
+| `src/lib/leveler.ts` | Общая для проигрывателя и экспорта функция усиления по сохранённым точкам. |
+| `src/lib/masterchain.ts` | Мягкий компрессор, автоматическое компенсационное усиление и лимитер с упреждением на −3 dBFS. |
+| `src/lib/loudness.ts` | BS.1770-4, K-взвешивание, гейт по блокам 400 мс, кратковременная громкость, LRA и оценка истинного пика. |
+| `src/export/render.ts` | MP4, сетка кадров H.264 через WebCodecs, AAC, замер и компенсация задержки, запись в файловый дескриптор. |
+| `src/export/audio.ts` | Общий рендер с точностью до сэмпла, экспорт MP3 и измерение задержки кодировщика. |
+| `src/export/subs.ts` | SRT, JSON, текст с тайм-кодами и без них, маскирование приглушённых слов. |
+| `src/export/folder.ts` | «Сохранить всё», дескриптор папки, подпапки проектов, запись файлов. |
+| `src/export/results.ts` | Результаты очереди, манифест, тексты, XML и ранее созданный MP4. |
+| `src/export/xml.ts` | Формирование Final Cut Pro 7 XML (`xmeml` v5), проверка кадров и частоты. |
+| `src/llm/client.ts` | OpenAI-совместимый клиент, потоковая передача, повторы, совместимость, рассуждения и список моделей. |
+| `src/llm/carve.ts` | Запрос для ИИ-монтажа, нумерация строк, сопоставление цитат с диапазонами слов, фильтр уверенности. |
+| `src/llm/pipeline.ts` | Шаги подготовки текстов, обработка длинных текстов по частям с объединением. |
+| `src/llm/phase.ts` | Статус активных запросов для интерфейса. |
+| `src/fasttrack.ts` | Быстрый проход, блокировка сна, уведомление, `S.afterTranscribe`. |
+| `src/batch.ts` | Последовательная очередь, состояния, повторы, остановка и продолжение, привязка папки, скачивание. |
+| `src/ui/*` | React-компоненты. В `hub.ts` находятся проигрыватель, прокрутка и слушатели времени вне React. |
+| `public/sw.js` | Service worker. Для страницы приоритет у сети, для файлов с хешами — у кэша. |
+| `server/workspace-server.mjs` | Дополнительный сервис JSON проектов, сессий, блокировок и администрирования. |
 
-## Persistence and state
+## Состояние и хранение
 
-- **IndexedDB `carver`** is the source of truth for projects, PCM blobs, title bytes, file handles
-  and key-value settings/checkpoints. Project JSON is autosaved after a 300 ms debounce and flushed on
-  `visibilitychange` / `pagehide`. PCM is cached so reopening a project does not decode again; the
-  source file still has to be re-linked because browsers cannot persist permission forever.
-- **`localStorage`** holds preferences and last-used settings, not project content:
-  `carver:prefs`, `carver:llm`, `carver:carve`, `carver:pipeline`, `carver:export`, `carver:profanity`,
-  `carver:modelsReady:<model>`, `carver:device`.
-- **Undo** snapshots (`Snap`) contain word cut/mute state, kept silences, range cuts, suggestion
-  statuses and custom cut edges. Any new per-word or per-project edit state must be added to
-  `snap()` / `restore()`. Operations that re-index words clear the undo stack.
-- **One task at a time**: `S.task` (`kind`, `frac`, `text`, `cancel`). Long operations report progress
-  and must be cancellable. Completion chimes are driven by idle detection, not by individual steps.
+- **IndexedDB `carver`** хранит проекты, PCM, заставки, файловые дескрипторы, настройки и контрольные точки. JSON записывается через 300 мс после последней правки, а также при `visibilitychange` и `pagehide`. PCM берётся из кэша при повторном открытии. Для доступа к исходному файлу может потребоваться снова выдать разрешение.
+- **`localStorage`** хранит предпочтения и последние настройки: `carver:prefs`, `carver:llm`, `carver:carve`, `carver:pipeline`, `carver:export`, `carver:profanity`, `carver:modelsReady:<model>`, `carver:device`.
+- **Отмена.** Снимки `Snap` содержат вырезание и приглушение слов, сохранённые паузы, ручные диапазоны, статусы предложений и границы вырезов. Добавляйте новые состояния слов и проекта в `snap()` и `restore()`. При перенумерации слов стек отмены очищается.
+- **Задачи.** Одновременно выполняется одна `S.task` с полями `kind`, `frac`, `text`, `cancel`. Длинные операции показывают прогресс и отменяются. Звуковой сигнал привязан к переходу в простой.
 
-## Editing model
+## Модель монтажа
 
-Two independent axes:
+1. **Вырезание** (`wordState[i]`, причины `WS.Kept/Manual/Llm/Filler/Profanity`) убирает время из EDL.
+2. **Приглушение** (`wordMute[i]`, причины `MU.None/Manual/Profanity`) убирает звук и оставляет время.
 
-1. **Cut** (`wordState[i]`, reasons `WS.Kept/Manual/Llm/Filler/Profanity`): removes time from the EDL.
-2. **Mute** (`wordMute[i]`, reasons `MU.None/Manual/Profanity`): keeps time but silences the word.
+Вырезы и длительность одинаковы во всех форматах. Приглушение настраивается отдельно, например видео с матом и MP3 с приглушённым матом. Массовые действия меняют только свою причину. «Вернуть все» для звуков-паразитов сохраняет ручные и ИИ-вырезы.
 
-All outputs share the same cuts and length; only muting may differ per output (for example video with
-мат, MP3 without). Bulk actions only touch their own reason, so «Вернуть все» fillers cannot undo a
-manual or AI cut.
+`buildEdl` убирает подряд идущие вырезанные слова вместе со следующей паузой, чтобы оставшаяся пауза предваряла следующее сохранённое слово. Поиск пауз защищает сохранённые слова. Фрагменты короче `cut.minKeep` удаляются. Ручные границы хранят абсолютное время исходника под ключами `rs:`/`re:` и `gs:`/`ge:`. Автопересчёт их сохраняет, а при добавлении и удалении звуков-паразитов ключи пересчитываются.
 
-`buildEdl` removes a run of words together with the pause that follows it, so the remaining pause
-sits before the next kept word. Silence cuts never clip kept words, and slivers shorter than
-`cut.minKeep` are dropped. Custom cut edges are absolute source times owned by a stable key
-(`rs:`/`re:`, `gs:`/`ge:`), survive automatic recomputation, and are re-keyed when words are
-inserted/removed by filler merging.
+Заставки сдвигают последующий результат без расходования времени основного исходника. Звуковая волна остаётся на шкале исходника и рисует зелёную метку фиксированной ширины. Субтитры и текст с тайм-кодами используют составную шкалу.
 
-Заставки are a composite layer on top of the kept timeline. They do not consume source time; they
-shift later output. The waveform stays in source time and draws a fixed-width green marker at the
-anchor. Subtitles and timecoded text use the composite mapping.
+## Обработка звука
 
-## Audio processing
+Цепочка хранится в проекте и работает в реальном времени.
 
-The sound chain is project state and is evaluated live:
-
-```
-restore (optional) → gain curve (phrase leveler + silence ducking) → compressor → make-up → limiter
+```text
+Реставрация → кривая усиления (выравнивание фраз и приглушение пауз)
+             → компрессор → компенсационное усиление → лимитер
 ```
 
-- The meter uses 16 kHz mono PCM, so stereo material may read 1–3 dB low and true peak is a floor.
-- The block model is fast enough to redraw 1.5 h of waveform in ~100 ms; exact 60 s tiles replace it
-  as they arrive. The panel shows «≈» until the whole processed programme has been measured.
-- Export uses the same curve and compressor/limiter settings; the limiter's 1.5 ms latency is
-  trimmed at the start and flushed at the end.
-- Restoration mixes before the gain curve. Tiles are loudness-matched to dry and crossfaded in.
+- Измеритель использует моно PCM 16 кГц. На стерео громкость может быть занижена на 1–3 дБ. Оценка истинного пика — нижняя граница.
+- Блочная модель перерисовывает волну записи на 1,5 часа примерно за 100 мс. Точные блоки по 60 с заменяют её по мере готовности. До полного замера обработанной записи панель показывает «≈».
+- Экспорт использует ту же кривую и настройки компрессора и лимитера. Задержка лимитера 1,5 мс срезается в начале и компенсируется выдачей хвоста в конце.
+- Реставрация смешивается до кривой усиления. Блоки приводятся к громкости исходника и сводятся плавными переходами.
 
-## Workspace concurrency (optional service)
+## Конкурентный доступ в рабочих пространствах
 
-- The client polls a ~1 KB **manifest** every 5 s and downloads a project only when its revision is
-  new. Applied revisions are stored in IndexedDB so reloads are cheap.
-- Saves are revision-checked: a stale `PUT` gets `409 STALE_REVISION`; a deleted project gets
-  `410 PROJECT_DELETED` via a tombstone.
-- Editor and batch locks are 60 s leases with heartbeats. Releasing a lock uses
-  `DELETE /projects/:id/lock`; deleting a project uses `DELETE /projects/:id`.
-- The server serializes read-modify-write per workspace, writes atomically via a temp file + rename,
-  and bounds body reads and jobs so one stalled upload cannot wedge the workspace.
-- Sessions are cookie-based and persisted to disk so a service restart does not log everyone out.
-  On `401`, the client re-exchanges the magic-link token once and retries.
+- Клиент запрашивает манифест примерно 1 КБ раз в 5 с. Проект скачивается только для новой ревизии. Применённые ревизии хранятся в IndexedDB.
+- Устаревший `PUT` получает `409 STALE_REVISION`, а запрос сохранения удалённого проекта — `410 PROJECT_DELETED` по записи об удалении.
+- Блокировки редактора и очереди действуют по 60 с и продлеваются периодическими запросами. `DELETE /projects/:id/lock` снимает блокировку, `DELETE /projects/:id` удаляет проект.
+- Сервер последовательно выполняет чтение, изменение и запись для каждого пространства. Запись атомарна через временный файл и переименование. Чтение запроса и выполнение операции ограничены по времени.
+- Сессии на основе cookie сохраняются на диск. При `401` клиент один раз повторно обменивает токен ссылки на сессию и повторяет запрос.
 
-## Batch queue
+## Пакетная обработка
 
-The queue runs one project at a time using the normal store operations, but does not open the editor.
-Every file becomes a saved project before processing; each stage is awaited and persisted before the
-next one starts. A failed file does not block later files. Settings are shared and can only change at
-safe boundaries. The video stage is manual by default: downloading results never starts an expensive
-render. See [BATCH.md](BATCH.md).
+Очередь обрабатывает по одному файлу через обычное хранилище и сохраняет отдельный проект до запуска. Следующий этап ждёт результата предыдущего и его сохранения. Сбой одного проекта не блокирует следующие. Общие настройки меняются между запусками. Видео экспортируется по запросу, а скачивание результатов только собирает готовые файлы. [Пакетная обработка](BATCH.md).
 
-## Security boundaries
+## Безопасность
 
-- No secrets in the repository. LLM keys live in browser `localStorage`; the workspace service uses
-  environment variables.
-- Workspace tokens are bearer secrets in a URL; they are exchanged for an HttpOnly cookie on first
-  use. Do not log them or put them in docs.
-- The workspace service accepts project JSON only; media bytes are rejected. Admin routes require
-  Basic Auth (or a bearer admin secret for scripts).
-- Static hosting must not add COOP/COEP; the app does not need cross-origin isolation and those
-  headers break model downloads.
+- Ключи LLM хранятся в `localStorage`. Сервис рабочих пространств читает учётные данные из переменных окружения. Секреты держите вне Git.
+- Токен ссылки рабочего пространства обменивается на HttpOnly cookie при первом использовании. Исключайте токены из журналов и документации.
+- Сервис рабочих пространств принимает JSON проектов. Административные маршруты требуют Basic Auth или секрет Bearer для скриптов.
+- Раздавайте статическую сборку без заголовков COOP/COEP, чтобы браузер мог скачать модели.

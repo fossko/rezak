@@ -1,20 +1,17 @@
-# Deployment
+# Развёртывание
 
-The editor is a static single-page app. You can deploy it to any host that serves files over HTTPS.
-The optional collaboration service is a separate Node process; the editor works without it.
+Редактор — статическое одностраничное приложение. Его можно разместить на любом хостинге с HTTPS. Сервис совместной работы запускается отдельным процессом Node.js по необходимости.
 
-**Never commit deployment secrets to this repository.** Hosts, domains, passwords, tokens and
-workspace links belong in your local environment, your host's secret store, or the server's
-environment file — not in git.
+Храните адреса инфраструктуры, токены, пароли и ссылки рабочих пространств в локальном окружении, хранилище секретов хостинга или файле окружения сервера. Исключайте эти данные из Git.
 
-## 1. Build
+## 1. Сборка
 
 ```bash
 npm ci
 npm run build
 ```
 
-`dist/` contains the application. Upload its **contents**, including hidden files:
+Загрузите **содержимое** `dist/`, включая скрытые файлы.
 
 ```
 dist/
@@ -27,65 +24,59 @@ dist/
   assets/ort-wasm-*.wasm
 ```
 
-Do not upload `node_modules/`, `models/`, recordings or `tests/`. The build is static; there is no
-Node runtime on the web host for the editor.
+Для запуска редактора на хостинге достаточно файлов сборки. `node_modules/`, `models/`, исходные записи и `tests/` в сборку не входят.
 
-## 2. Static hosting rules
+## 2. Статический хостинг
 
-| Requirement | Why |
+| Настройка | Зачем |
 |---|---|
-| HTTPS | Service worker, File System Access API and persistent storage require a secure context. |
-| `.wasm` → `application/wasm` | The ONNX runtime loads a large WASM binary; a wrong MIME type breaks it. |
-| No `Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy` | They block model downloads from Hugging Face. The app does not need cross-origin isolation. |
-| `index.html` and `sw.js` → `no-cache` | Otherwise the service worker can serve an old shell after a deploy. |
-| `/assets/*` → immutable long cache | Filenames are content-hashed. |
-| SPA fallback to `index.html` | There is no server-side routing. |
+| HTTPS | Service worker, File System Access API и постоянное хранилище требуют защищённого контекста. |
+| `.wasm` → `application/wasm` | ONNX загружает бинарный файл WASM с этим MIME-типом. |
+| Без `Cross-Origin-Opener-Policy` и `Cross-Origin-Embedder-Policy` | Эти заголовки блокируют загрузку моделей с Hugging Face. |
+| `index.html` и `sw.js` → `no-cache` | Service worker должен проверять актуальность оболочки после публикации. |
+| `/assets/*` → длительное кеширование с `immutable` | Имена файлов включают хеш содержимого. |
+| Подстановка `index.html` для маршрутов SPA | Маршрутизация выполняется в браузере. |
 
-`base: './'` is deliberate: the app also works under a subpath.
+Настройка `base: './'` позволяет разместить приложение в подпапке.
 
 ### nginx
 
-Copy `deploy/nginx.conf.example` to `/etc/nginx/sites-available/rezak`, replace `<DOMAIN>`, symlink
-it into `sites-enabled/`, then:
+Скопируйте `deploy/nginx.conf.example` в `/etc/nginx/sites-available/rezak`, подставьте домен вместо `<DOMAIN>` и добавьте символическую ссылку в `sites-enabled/`. В примерах замените заполнители перед запуском команд.
 
 ```bash
 nginx -t && systemctl reload nginx
-certbot --nginx -d <DOMAIN>      # or your own certificate
+certbot --nginx -d <DOMAIN>      # или подключите свой сертификат
 ```
 
 ### Apache
 
-`public/.htaccess` is copied into `dist/` by Vite. It sets the WASM MIME type and cache headers for
-shared hosting. Confirm that `mod_headers` and `mod_deflate` are enabled.
+Vite копирует `public/.htaccess` в `dist/`. Файл задаёт MIME-тип WASM и заголовки кэширования. Проверьте, что включены `mod_headers` и `mod_deflate`.
 
-### Generic static host
+### Другой статический хостинг
 
-Configure the MIME type, cache headers and SPA fallback in the host's control panel. If the host does
-not support custom headers, at minimum avoid caching `index.html`; hashed assets are safe.
+Настройте MIME-тип, заголовки кэширования и подстановку `index.html` в панели управления. Если пользовательские заголовки недоступны, отключите кэширование как минимум для `index.html`. Файлы с хешами в имени можно кэшировать.
 
-## 3. Optional model mirror
+## 3. Зеркало моделей
 
-The app fetches models from Hugging Face first. If Hugging Face is unreachable, it can fall back to
-`<base>/models/<model-id>/resolve/main/<file>`. This is useful for offline or restricted networks.
+Приложение сначала обращается к Hugging Face. При недоступности оно может загрузить модель из `<base>/models/<model-id>/resolve/main/<file>`. Зеркало пригодится в сети с ограниченным доступом.
 
 ```bash
-node deploy/sync-models.mjs                 # all supported models
-node deploy/sync-models.mjs --list           # show what would be downloaded
+node deploy/sync-models.mjs                 # все поддерживаемые модели
+node deploy/sync-models.mjs --list           # список моделей для загрузки
 node deploy/sync-models.mjs --only=whisper-large-v3-turbo,wav2vec2
 ```
 
-The mirror is several GB and is gitignored. Sync `models/` to the server separately:
+Зеркало занимает несколько ГБ и исключено из Git. Переносите `models/` на сервер отдельно.
 
 ```bash
 rsync -a models/ <user>@<host>:/srv/rezak/current/models/
 ```
 
-`deploy/nginx.conf.example` has a `/models/` location with the right MIME types and immutable cache.
+В `deploy/nginx.conf.example` есть блок `/models/` с нужными MIME-типами и неизменяемым кэшем.
 
-## 4. Optional collaboration service
+## 4. Сервис рабочих пространств
 
-The workspace service stores **project JSON only**. It never accepts video bytes. Start it beside the
-static site and proxy `/api/` and `/admin` to it under the same HTTPS origin.
+Сервис хранит **JSON проектов**. Исходные медиа остаются на компьютерах пользователей. Запустите сервис рядом со статическим сайтом и проксируйте `/api/` и `/admin` на том же источнике HTTPS.
 
 ```bash
 CARVER_ADMIN_SECRET='<long-random-secret>' \
@@ -96,18 +87,17 @@ CARVER_PUBLIC_ORIGIN='https://<DOMAIN>' \
 node server/workspace-server.mjs 8787
 ```
 
-| Variable | Required | Meaning |
+| Переменная | Обязательна | Назначение |
 |---|---|---|
-| `CARVER_ADMIN_SECRET` | yes | Bearer secret for API scripts (`Authorization: Bearer …`). |
-| `CARVER_ADMIN_PASSWORD` | yes | Password for the `/admin` Basic Auth page and admin API. |
-| `CARVER_ADMIN_USER` | no | Admin username (default `rezak`). |
-| `CARVER_WORKSPACE_DIR` | no | Storage directory (default `./.workspaces`). Must be writable and persistent. |
-| `CARVER_PUBLIC_ORIGIN` | in production | Public origin used to build workspace login links. Defaults to `http://localhost:<port>`; set it to your HTTPS origin. |
+| `CARVER_ADMIN_SECRET` | Да | Секрет для скриптов API (`Authorization: Bearer …`). |
+| `CARVER_ADMIN_PASSWORD` | Да | Пароль Basic Auth для `/admin` и административного API. |
+| `CARVER_ADMIN_USER` | Нет | Имя администратора, по умолчанию `rezak`. |
+| `CARVER_WORKSPACE_DIR` | Нет | Постоянный каталог с правом записи, по умолчанию `./.workspaces`. |
+| `CARVER_PUBLIC_ORIGIN` | В рабочей среде | Публичный источник HTTPS для формирования ссылок входа. По умолчанию `http://localhost:<port>`. |
 
-Use long random values. The server refuses to start without the secret and password. Do not put
-these values in the repository or in client-side code.
+Используйте длинные случайные значения секрета и пароля. Они нужны для запуска сервиса и хранятся вне репозитория и клиентского кода.
 
-### systemd example
+### Пример systemd
 
 ```ini
 [Unit]
@@ -129,7 +119,7 @@ PrivateTmp=true
 WantedBy=multi-user.target
 ```
 
-`/etc/rezak/workspace.env` (mode `0600`, owned by the service user):
+Для `/etc/rezak/workspace.env` установите права `0600` и назначьте владельцем пользователя сервиса.
 
 ```bash
 CARVER_ADMIN_SECRET=...
@@ -139,7 +129,7 @@ CARVER_WORKSPACE_DIR=/var/lib/rezak/workspaces
 CARVER_PUBLIC_ORIGIN=https://<DOMAIN>
 ```
 
-### nginx proxy
+### Прокси nginx
 
 ```nginx
 location /api/ {
@@ -149,7 +139,7 @@ location /api/ {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_request_buffering off;
     proxy_read_timeout 60s;
-    client_max_body_size 25m;   # project JSON, not media
+    client_max_body_size 25m;   # JSON проекта
     gzip_proxied any;
 }
 
@@ -159,51 +149,47 @@ location /admin {
 }
 ```
 
-The client polls a small manifest every 5 s; gzip matters for full-project responses.
+Клиент запрашивает небольшой манифест каждые 5 секунд. gzip сокращает объём полных ответов с проектами.
 
-### Backups
+### Резервное копирование
 
-Back up `CARVER_WORKSPACE_DIR` like any data directory. It contains project JSON, `sessions.dat` and
-tombstones. A backup of the static `dist/` is not enough to restore user projects.
+Копируйте каталог `CARVER_WORKSPACE_DIR`. В нём хранятся JSON проектов, `sessions.dat` и записи об удалениях. Проекты восстанавливаются из резервной копии этого каталога.
 
-## 5. Deployment checklist
+## 5. Проверка публикации
 
-Before uploading:
+Перед загрузкой:
 
-- [ ] `npm run check:secrets` passes.
-- [ ] `npm run typecheck`, `npm test` and `npm run build` pass.
-- [ ] No real host, domain, token or password is in the diff.
-- [ ] `dist/` contains `.htaccess`, `sw.js` and the WASM asset.
-- [ ] The `index-*.js` hash in `dist/index.html` matches the uploaded asset.
+- [ ] Успешно прошли `npm run check:secrets`, `npm run typecheck`, `npm test` и `npm run build`.
+- [ ] Diff свободен от реальных адресов, доменов, токенов и паролей.
+- [ ] В `dist/` есть `.htaccess`, `sw.js` и WASM.
+- [ ] Хеш `index-*.js` в `dist/index.html` совпадает с загружаемым файлом.
 
-After uploading:
+После загрузки проверьте ответы:
 
 ```bash
 curl -sI https://<DOMAIN>/ | head -1                                      # 200
 curl -sI https://<DOMAIN>/sw.js | grep -i cache-control                   # no-cache
-curl -sI https://<DOMAIN>/ | grep -iE 'cross-origin-(opener|embedder)'    # empty
+curl -sI https://<DOMAIN>/ | grep -iE 'cross-origin-(opener|embedder)'    # пусто
 curl -sI "https://<DOMAIN>/assets/<wasm-file>" | grep -i content-type     # application/wasm
 ```
 
-Then open the site in Chrome, hard-reload once (⌘⇧R) to drop the old service worker, open a short
-recording and confirm transcription starts.
+Откройте сайт в Chrome, обновите страницу без кэша (⌘⇧R), откройте короткую запись и проверьте запуск расшифровки.
 
-## 6. Rollback
+## 6. Откат
 
-Static deploy:
+Для статического сайта:
 
-1. Keep the previous `dist/` (or a timestamped copy / release directory).
-2. Re-upload it, or switch the symlink/root back.
-3. Hard-reload in the browser so the service worker picks up the old shell.
+1. Сохраните прежний каталог `dist/` или отдельную папку выпуска.
+2. Загрузите предыдущую сборку или верните прежнюю ссылку или корневой каталог.
+3. Обновите страницу без кэша, чтобы service worker подхватил предыдущую оболочку.
 
-Workspace service:
+Для сервиса рабочих пространств:
 
-1. Keep the previous `server/workspace-server.mjs` and a timestamped copy of the data directory.
-2. Stop the service, restore the file and data, start it again.
-3. Existing sessions are valid only if `sessions.dat` was preserved; otherwise users re-enter through
-   their workspace link.
+1. Сохраните прежний `server/workspace-server.mjs` и копию каталога данных с меткой времени.
+2. Остановите сервис, восстановите файл и данные, запустите сервис.
+3. Если `sessions.dat` не сохранился, участникам нужно снова открыть ссылку рабочего пространства.
 
-## 7. Using `deploy/ship.sh`
+## 7. Скрипт `deploy/ship.sh`
 
 ```bash
 CARVER_HOST=user@host.example deploy/ship.sh
@@ -211,10 +197,6 @@ CARVER_HOST=user@host.example CARVER_KEY=~/.ssh/deploy_key deploy/ship.sh
 CARVER_HOST=user@host.example deploy/ship.sh --models
 ```
 
-Optional variables: `CARVER_DEST` (default `/srv/rezak/current`), `CARVER_SSH` (default `ssh`),
-`CARVER_KEY`. The script builds locally and uses `rsync -a --delete` for `dist/`; it never touches
-the server's workspace data.
+Дополнительные переменные — `CARVER_DEST` (по умолчанию `/srv/rezak/current`), `CARVER_SSH` (по умолчанию `ssh`) и `CARVER_KEY`. Скрипт собирает приложение локально и копирует `dist/` через `rsync -a --delete`. Данные рабочих пространств хранятся отдельно.
 
-`deploy/post-receive.example` is an alternative: a bare git repository on the server checks out
-`main` and builds there. It requires Node and `node_modules` on the server, so it is usually not worth
-it for a static app.
+Пример `deploy/post-receive.example` показывает сборку на сервере из ветки `main` пустого Git-репозитория без рабочей копии. Для этого варианта Node.js и зависимости нужны на сервере.

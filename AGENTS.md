@@ -28,7 +28,7 @@ This is a public source release. Before every commit:
 2. **The editor has no backend.** It is a static Vite + React + TypeScript site deployed as plain files
    (`dist/`). Everything (decoding, Whisper, export) runs in the browser. `server/workspace-server.mjs`
    is an *optional* collaboration service for project JSON; do not make the editor depend on it.
-3. **UI language is Russian.** Code, comments, identifiers and docs are English. Keep it that way.
+3. **UI and reader-facing documentation are in Russian.** Code, comments and identifiers are in English.
 4. **All times are SOURCE seconds** unless a name says `out` (output timeline after cuts). Conversion
    only via `srcToOut` / `outToSrc` / `segAt` in `src/lib/edl.ts`.
 5. **`project.words[i]` is the index space for everything:** `wordState[i]` (cut reason, `WS`),

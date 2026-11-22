@@ -1,17 +1,12 @@
-# Contributing
+# Как внести вклад
 
-Thanks for taking a look. This is a small, browser-only application with a strong local-first
-constraint; the fastest way to get a change accepted is to respect the invariants and verify it.
+## Перед началом
 
-## Before you start
+1. Прочитайте [AGENTS.md](AGENTS.md) и [описание архитектуры](docs/ARCHITECTURE.md).
+2. Проверьте [известные ограничения и открытые вопросы](docs/STATUS.md).
+3. Крупные изменения поведения сначала обсудите в issue. Редактор работает локально и монтирует вырезанием. Во всех форматах экспорта совпадают вырезы и длительность.
 
-1. Read [AGENTS.md](AGENTS.md) (working guide and invariants) and
-   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (system map).
-2. Check [docs/STATUS.md](docs/STATUS.md) for known limitations and open questions.
-3. For a large behavior change, open an issue first. Remove-only editing, local-first processing and
-   identical cuts/length across outputs are product decisions, not accidents.
-
-## Setup
+## Настройка
 
 ```bash
 npm ci
@@ -20,34 +15,26 @@ npm test
 npm run build
 ```
 
-Requirements and test details are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Требования к окружению и порядок запуска тестов описаны в [руководстве по разработке](docs/DEVELOPMENT.md).
 
-## What a good change looks like
+## Подготовка изменений
 
-- **Small and focused.** One behavior change per pull request, with the reason in the description.
-- **Typechecked.** `npm run typecheck` must print nothing. Do not use `any` to hide a real mismatch.
-- **Tested.** Add or extend a unit test for pure logic. For UI, export, audio or workspace behavior,
-  add or run the relevant browser test and report the result.
-- **Measured where it matters.** A/V sync, loudness, frame accuracy and performance claims need
-  numbers from a real run, not an assumption.
-- **Documented.** Update README/docs when a command, invariant or deployment step changes.
-- **Secret-free.** Run `npm run check:secrets` and inspect the diff. Never commit `.env` files,
-  tokens, passwords, server addresses or workspace magic links.
+- Включайте в пул-реквест одно изменение поведения и объясняйте его причину.
+- Устраняйте ошибки `npm run typecheck` в типах. Избегайте `any` для обхода проверки.
+- Для чистой логики добавляйте или расширяйте модульный тест. Для интерфейса, экспорта, звука и рабочих пространств запускайте подходящий браузерный тест и указывайте результат.
+- Подкрепляйте утверждения о синхронизации, громкости, точности кадров и производительности результатами замеров.
+- Обновляйте документацию при изменении команды, инварианта или шага развёртывания.
+- Запускайте `npm run check:secrets` и просматривайте diff. Исключайте из коммитов файлы `.env`, токены, пароли, адреса серверов и ссылки входа в рабочие пространства.
 
-## Code conventions
+## Соглашения
 
-- UI strings are Russian. Code, comments, identifiers and docs are English.
-- All times are source seconds unless the name says `out`; use `srcToOut` / `outToSrc` / `segAt`.
-- Mutate state in the store, then call `S.changed()` (edit) or `S.bump()` (UI only). Call
-  `S.checkpoint()` before an undoable edit.
-- Any new per-word or per-project edit state must be added to undo snapshots and to word-index
-  remapping.
-- Do not add COOP/COEP headers; do not change `base: './'`.
-- Keep the test hooks (`window.__carver*`) working.
+- Интерфейс и документация для читателей — на русском. Код, комментарии и идентификаторы — на английском.
+- Время измеряется в секундах исходника. Имена с `out` относятся к выходной шкале. Для преобразований используйте `srcToOut`, `outToSrc` и `segAt`.
+- Меняйте состояние в хранилище и вызывайте `S.changed()` для правок или `S.bump()` для обновления интерфейса. Перед отменяемой правкой вызывайте `S.checkpoint()`.
+- Добавляйте новые состояния редактирования слов и проекта в снимки отмены и учитывайте их при перенумерации слов.
+- Сохраняйте `base: './'` и тестовые точки входа `window.__carver*`. Заголовки COOP/COEP блокируют загрузку моделей.
 
-## Tests to run
-
-Minimum before a pull request:
+## Проверки перед пул-реквестом
 
 ```bash
 npm run check:secrets
@@ -56,29 +43,19 @@ npm test
 npm run build
 ```
 
-For changes touching media, export, audio, the timeline or the workspace UI, also run the relevant
-browser tests against the built app (see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)).
+Для изменений медиа, экспорта, звука, шкалы времени или интерфейса рабочих пространств дополнительно запускайте соответствующие браузерные тесты на готовой сборке. [Руководство по разработке](docs/DEVELOPMENT.md).
 
-## Commits and pull requests
+## Коммиты и пул-реквесты
 
-- Write a clear, imperative commit subject. Explain the why in the body if it is not obvious.
-- Do not rewrite published history.
-- In the pull request, state what changed, what you ran, and what you could not verify. Screenshots
-  are welcome for UI changes; keep them out of the repository unless they are deliberately small
-  documentation assets.
-- By contributing, you agree that your contribution can be distributed with the project. The project
-  does not currently declare an open-source license; discuss licensing in an issue before relying on
-  reuse rights.
+- Начинайте сообщение коммита с глагола и поясняйте причину изменения, если она требует контекста.
+- Сохраняйте опубликованную историю Git.
+- В пул-реквесте опишите изменения, выполненные проверки и то, что осталось непроверенным. Скриншоты интерфейса можно приложить к пул-реквесту. В репозиторий добавляйте только небольшие иллюстрации для документации.
+- Внося вклад, вы соглашаетесь, что ваши изменения могут распространяться вместе с проектом. Пока открытая лицензия не объявлена, обсуждайте условия повторного использования в issue.
 
-## Reporting bugs
+## Сообщения об ошибках
 
-Include:
+Укажите версии браузера и ОС, модель GPU и доступность WebGPU, способ запуска, шаги воспроизведения, ожидаемое и фактическое поведение. Приложите ошибки из консоли. Для проблем со звуком и экспортом добавьте вывод `ffprobe`.
 
-- Browser and OS version, GPU/WebGPU availability.
-- Whether the app was built locally or served from a deployment.
-- Steps to reproduce, expected vs actual behavior.
-- Console errors and, for export/audio issues, the relevant `ffprobe` output.
-- Do **not** attach private recordings or transcripts unless you have the rights and intend to share
-  them. A synthetic reproduction is better.
+По возможности используйте искусственную тестовую запись. Публикуйте частные записи или расшифровки только при наличии прав и согласия на раскрытие.
 
-Security issues go through [SECURITY.md](SECURITY.md), not the public issue tracker.
+Об уязвимостях сообщайте владельцу приватно. [SECURITY.md](SECURITY.md).

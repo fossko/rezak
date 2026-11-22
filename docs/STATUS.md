@@ -1,70 +1,52 @@
-# Status
+# Состояние проекта
 
-Last updated: 2026-11-16. This is a source release of the current working tree; it is not a claim
-that every feature has been validated on every platform.
+Сводка от 16 ноября 2026 года описывает состояние исходного проекта на момент публикации кода. Проверки охватывают перечисленные сценарии и платформы.
 
-## Implemented and tested
+## Реализовано и проверено
 
-| Area | State |
+| Область | Возможности |
 |---|---|
-| Media import | MP4/MOV (H.264/AAC) lazy decode; MP3/M4A/AAC/WAV/FLAC/OGG/Opus audio-only; 15 GB files open without reading the whole file. |
-| Transcription | Whisper Large v3 Turbo / small / base on WebGPU, CPU fallback with a visible warning; wav2vec2 Russian forced alignment; 5-minute checkpoints. |
-| Text editing | Word selection, cut/restore, undo/redo, pause chips, virtualized 15k-word transcript, keyboard navigation, caret. |
-| Fillers and silences | Acoustic filler detection with wav2vec2 veto; adjustable silence threshold, minimum pause and padding. |
-| Timeline | Waveform, cuts, words, playhead, overview; editable cut edges with pixel/keyboard nudging and no-overlap clamping. |
-| Preview | Frame-accurate output preview, audio fades at joins, 0.75–2× pitch-preserving playback. |
-| Sound | BS.1770 LUFS/true-peak meter, compressor, make-up, silence ducking, look-ahead limiter, optional phrase leveling, live waveform updates. |
-| Restoration | Optional Sidon model on WebGPU, dry/wet mix, preview/export tile scheduling. |
-| Export | MP4 H.264 + AAC streamed to disk; MP3; SRT/JSON/TXT/timecoded text; Final Cut Pro 7 XML; «Сохранить всё». |
-| М cut/mute | Russian мат detector, custom wildcard/regex lists, mute (keep time) or cut, hotkey M, per-output mute choice. |
-| AI | OpenAI-compatible client with streaming/retries/thinking models; AI carving with review; full text pipeline. |
-| Batch | Sequential queue, per-stage state, GPU retries, stop/retry/resume, folder relink, result folder, live journal. |
-| Workspaces | Optional Node service: manifests, revisions, leases, tombstones, admin create/duplicate/delete, session recovery. |
-| Persistence | IndexedDB projects/PCM/handles, autosave, remembered file handles, service-worker offline shell. |
+| Импорт | MP4 и MOV с H.264/AAC читаются по требованию, в том числе файлы на 15 ГБ. Поддерживаются MP3, M4A, AAC, WAV, FLAC, OGG и Opus. |
+| Расшифровка | Whisper Large v3 Turbo, small и base на WebGPU. Режим CPU с предупреждением, выравнивание русской речи wav2vec2, контрольные точки каждые пять минут. |
+| Монтаж по тексту | Выделение слов, вырезание и возврат, отмена и повтор, метки пауз, навигация клавишами, курсор и виртуализация расшифровки на 15 тысяч слов. |
+| Звуки-паразиты и паузы | Акустический поиск с проверкой wav2vec2, порог тишины, минимальная пауза и отступы. |
+| Шкала времени | Волна, вырезы, слова, указатель воспроизведения и обзор записи. Границы вырезов подстраиваются мышью и клавишами с защитой от пересечений. |
+| Предпросмотр | Точность до кадра, плавные звуковые переходы на стыках и скорость 0,75–2× с сохранением высоты тона. |
+| Звук | Измеритель LUFS и истинного пика BS.1770, компрессор, компенсационное усиление, приглушение пауз, лимитер с упреждением, опциональное выравнивание по фразам и обновление волны. |
+| Реставрация | Sidon на WebGPU, смешивание обработанного и исходного звука, обработка блоками при предпросмотре и экспорте. |
+| Экспорт | Прямая запись MP4 (H.264 и AAC), MP3, SRT, JSON, TXT, текст с тайм-кодами, Final Cut Pro 7 XML и «Сохранить всё». |
+| Мат | Детектор русского мата с подстановками и регулярными выражениями, вырезание или приглушение с сохранением времени, клавиша M и отдельное приглушение для каждого формата. |
+| ИИ | OpenAI-совместимый клиент с потоковой передачей и повторами, модели с рассуждениями, ИИ-монтаж с просмотром предложений и подготовка текстов. |
+| Пакетная обработка | Последовательная очередь со статусами этапов, повторами GPU, остановкой, повтором, продолжением, привязкой папки, выгрузкой результатов и журналом. |
+| Рабочие пространства | Дополнительный сервис Node.js с манифестами, ревизиями, блокировками, записями об удалениях, созданием, копированием и удалением пространств и восстановлением сессий. |
+| Хранение | Проекты, PCM и дескрипторы в IndexedDB, автосохранение и загрузка оболочки без сети через service worker. |
 
-`npm test` (unit + service tests) and `npm run build` pass on the release tree. Browser e2e tests
-exist for the editor, export, sound, mat, titles, batch and workspace flows; they require a local
-Chrome, a test recording and (for some steps) an LLM server. See [DEVELOPMENT.md](DEVELOPMENT.md).
+На момент публикации сводки `npm test` и `npm run build` проходили. Для сквозных тестов редактора, экспорта, звука, мата, заставок, очереди и рабочих пространств нужны локальный Chrome, тестовая запись и для отдельных шагов сервер LLM. [Разработка и тесты](DEVELOPMENT.md).
 
-## Known limitations
+## Известные ограничения
 
-- **Chrome/Edge only.** The app depends on WebCodecs, File System Access API, WebGPU (recommended)
-  and service workers. Firefox/Safari are not supported.
-- **WebGPU is strongly recommended.** CPU transcription works but is much slower; the UI warns and
-  offers a switch. Hardware H.264 export depends on the platform encoder.
-- **Russian speech only.** The alignment model and the profanity/filler tuning target Russian.
-- **Remove-only editing.** There is no reordering, multi-source editing or arbitrary timeline
-  composition. Заставки are the only inserted material.
-- **VFR video is not supported.** Use constant-frame-rate sources; the XML exporter rejects
-  fractional rates it cannot represent exactly.
-- **16 kHz mono PCM for measurement.** Loudness may read 1–3 dB low on wide stereo, and true peak is
-  a floor. Restoration quality depends on the source and the WebGPU backend.
-- **Fast-track strictness is not confirmed by the product owner.** “STRICT” was implemented as the
-  conservative «осторожно» preset.
-- **Workspace service is optional and single-process.** It serializes writes per workspace but is
-  not a horizontally scaled database. Back up its data directory.
-- **Sidon restoration model size.** It is about 600 MB and is downloaded only when enabled.
-- **No license has been chosen.** The repository is public source, not yet open source under a
-  recognized license. Ask before reuse.
+- Поддерживаются Chrome и Edge. Редактор использует WebCodecs, File System Access API, service worker и рекомендует WebGPU. Firefox и Safari не поддерживаются.
+- Расшифровка на CPU существенно медленнее. Интерфейс предупреждает и предлагает перейти на WebGPU. Аппаратный экспорт H.264 зависит от кодировщика платформы.
+- Выравнивание речи, детектор мата и звуков-паразитов настроены на русский язык.
+- Монтаж ограничен вырезанием фрагментов и вставкой заставок. Перестановки, произвольные композиции и монтаж из нескольких исходников отсутствуют.
+- Используйте исходники с постоянной частотой кадров. XML отвергает дробную частоту, которую нельзя представить точно.
+- Измеритель использует моно PCM 16 кГц. На широком стерео громкость может быть занижена на 1–3 дБ, а истинный пик оценивается снизу. Качество реставрации зависит от исходника и WebGPU.
+- Запрос «STRICT» для быстрого прохода реализован как осторожный режим. Его строгость ещё предстоит подтвердить.
+- Сервис рабочих пространств последовательно записывает изменения в рамках одного процесса. Данные сервиса требуют резервного копирования.
+- Модель Sidon занимает около 600 МБ и скачивается при первом включении.
+- Для исходного проекта открытая лицензия пока не объявлена.
 
-## Open questions / ideas
+## Открытые вопросы и идеи
 
-- Confirm the fast-track strictness and the production LLM provider/model.
-- Loudness: EQ and other manual controls are still deferred. The current controls are compressor,
-  make-up, silence ducking, limiter and optional phrase leveling.
-- Automatic make-up can reach about +27 dB on very quiet material («Агрессивно»); consider a lower cap.
-- Resuming an interrupted fast track after transcription.
-- Restoration: the meter is computed on dry PCM, so with the compressor on a 100% export can be about
-  1 dB louder than the meter (still within −14 ±1). Sidon may soften short non-speech sounds.
-- Audio processing discussed but not built: mouth declicker, de-esser, noise gate. The decision was to
-  extend the in-house TypeScript DSP rather than ship ffmpeg.wasm (size, GPL, single-threaded without
-  COOP/COEP). Measured JS throughput: compressor+limiter ×390 real time, split-band de-esser+gate
-  ×1100, STFT 1024/256 ×73.
+- Подтвердить строгость быстрого прохода и выбор рабочего провайдера и модели LLM.
+- Эквалайзер и другие ручные регуляторы отложены. Сейчас доступны компрессор, компенсационное усиление, приглушение пауз, лимитер и выравнивание по фразам.
+- В режиме «Агрессивно» усиление тихого исходника может достигать примерно +27 дБ. Обсуждается снижение верхней границы.
+- Продолжение быстрого прохода после прерывания расшифровки.
+- Измеритель работает на исходном PCM. С компрессором и 100% реставрацией экспорт может быть примерно на 1 дБ громче показания, оставаясь в пределах −14 ±1 LUFS. Sidon может смягчать короткие неречевые звуки.
+- Удаление щелчков рта, деэссер и шумовой гейт обсуждались. Решение — развивать DSP на TypeScript с учётом размера, лицензии GPL и однопоточной работы ffmpeg.wasm без COOP/COEP. Измеренная скорость JavaScript относительно реального времени — ×390 для компрессора и лимитера, ×1100 для многополосного деэссера с гейтом, ×73 для STFT 1024/256.
 
-## Release hygiene
+## Подготовка выпуска
 
-- `main` is the published branch. Do not rewrite its history.
-- Before tagging a release: `npm run check:secrets && npm run typecheck && npm test && npm run build`,
-  then the relevant browser tests with a representative recording.
-- The repository intentionally excludes recordings, model weights, `dist/`, screenshots and local
-  tooling. A fresh clone needs `npm ci` and a first-run model download.
+- Публичная ветка исходного проекта — `main`. Сохраняйте её историю.
+- Перед тегом запустите `npm run check:secrets && npm run typecheck && npm test && npm run build` и нужные браузерные тесты на представительной записи.
+- Записи, веса моделей, `dist/`, скриншоты и локальные инструменты исключены из Git. После клонирования нужны `npm ci` и загрузка моделей при первом запуске.
